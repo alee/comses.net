@@ -18,6 +18,10 @@ from .models import ConferenceSubmission
 logger = logging.getLogger(__name__)
 
 
+class SkopeForm(forms.Form):
+    studyArea = forms.JSONField(label=_("GeoJSON"))
+
+
 class ContactForm(forms.Form):
     SPAM_PATTERNS = r"(xevil|captchas)"
     SPAM_EMAIL_DOMAINS = ("qq.com",)

@@ -12,6 +12,7 @@ from django.template.loader import get_template
 from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView, RedirectView, CreateView
+from django.views.generic.edit import FormView
 from django.views.generic.list import ListView
 from rest_framework import (
     viewsets,
@@ -47,7 +48,7 @@ from core.views import (
     HtmlNoDeleteViewSet,
 )
 from library.models import Codebase
-from .forms import ConferenceSubmissionForm
+from .forms import ConferenceSubmissionForm, SkopeForm
 from .metrics import Metrics
 from .models import (
     ComsesDigest,
@@ -69,6 +70,10 @@ logger = logging.getLogger(__name__)
 """
 Contains wagtail related views
 """
+
+class TestSkopeView(FormView):
+    template_name = "home/skopetest.jinja"
+    form_class = SkopeForm
 
 
 class ProfileRedirectView(LoginRequiredMixin, RedirectView):

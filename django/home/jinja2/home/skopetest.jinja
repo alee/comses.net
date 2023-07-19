@@ -1,0 +1,35 @@
+
+{% extends "base.jinja" %}
+
+{% block title %}SKOPE TEST{% endblock %}
+
+{% block introduction %}<h1>About</h1>{% endblock %}
+
+{% block content %}
+    <div class='jumbotron'>
+        <p>Test SKOPE Form Post</p>
+    </div>
+    <form id="skope_form" action="https://staging.openskope.org/dataset/paleocar_v3" method="post">
+        {% include "includes/form.jinja" %}
+        <button type="submit" id="submitGeojsonBtn" class='btn btn-primary'>Submit GeoJSON</button>
+    </form>
+    {#
+    {% script async=False %}
+    <script>
+        const form = document.getElementById("skope_form");
+        console.log("my form: ", form);
+        form.addEventListener("submit",
+        function (evt) {
+            evt.preventDefault();
+            console.log("submitting geojson");
+            const httpRequest = new XMLHttpRequest();
+            httpRequest.open("POST", "https://staging.openskope.org/dataset/paleocar_v3");
+            httpRequest.setRequestHeader("Content-Type", "application/json");
+            const geojson = JSON.parse(document.getElementById("id_studyArea").value);
+            console.log("geojson: ", geojson);
+            httpRequest.send(`studyArea=${JSON.stringify(geojson)}`);
+        }, true);
+    </script>
+    {% endscript %}
+    #}
+{% endblock content %}

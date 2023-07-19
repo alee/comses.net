@@ -1717,7 +1717,6 @@ class PeerReview(models.Model):
             template_name="library/review/email/model_certified.jinja",
             context={"review": self},
             to=[self.submitter.email],
-            cc=[settings.REVIEW_EDITOR_EMAIL],
         )
 
     def log(self, message: str, action: PeerReviewEvent, author: MemberProfile):
@@ -1897,7 +1896,6 @@ class PeerReviewInvitation(models.Model):
             template_name="library/review/email/review_invitation.jinja",
             context={"invitation": self},
             to=[self.reviewer_email],
-            cc=[settings.REVIEW_EDITOR_EMAIL],
         )
         self.review.log(
             action=PeerReviewEvent.INVITATION_SENT
@@ -1922,7 +1920,6 @@ class PeerReviewInvitation(models.Model):
             template_name="library/review/email/review_invitation_accepted.jinja",
             context={"invitation": self, "feedback": feedback},
             to=[self.reviewer_email],
-            cc=[settings.REVIEW_EDITOR_EMAIL],
         )
         return feedback
 

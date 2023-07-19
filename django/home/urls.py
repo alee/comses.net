@@ -45,4 +45,5 @@ urlpatterns = [
         views.MemberProfileImageUploadView.as_view(),
         name="profile-avatar-upload",
     ),
+    path("skopetest", views.TestSkopeView.as_view(), name="skope-test"),
 ] + router.urls
