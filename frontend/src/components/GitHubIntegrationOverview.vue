@@ -65,7 +65,7 @@
 import { ref, onMounted } from "vue";
 import { useCodebaseAPI } from "@/composables/api/codebase";
 import type { RelatedCodebase, GitHubAppInstallationStatus } from "@/types";
-import ConnectGitHubStep from "@/components/githubIntegration/ConnectGitHubStep.vue";
+import ConnectGitHubStep from "@/components/github/ConnectGitHubStep.vue";
 
 const { submittedCodebases, getGitHubInstallationStatus } = useCodebaseAPI();
 

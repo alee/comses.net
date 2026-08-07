@@ -30,6 +30,7 @@ This platform manages scientific software artifacts and publication metadata. Th
 - Metadata is consumed by external systems; preserve schema integrity and avoid lossy transforms
 - Review and publication transitions must be explicit, auditable, and safe to retry without side effects (idempotent)
 - File storage and database state must remain consistent; avoid partial updates
+- Never modify model-release storage directly; use the repository's release filesystem API so archival manifests, checksums, and database state remain consistent.
 - Background tasks that affect publication or metadata must be safe to retry
 - Permission checks must be enforced in the backend at object level
 - Ensure consistent permission enforcement across views, APIs, and background tasks
@@ -45,52 +46,30 @@ This platform manages scientific software artifacts and publication metadata. Th
 
 ## Backend Conventions (Django)
 
-- Keep core domain logic in models; place cross-model workflows in dedicated modules
-- Put reusable or nontrivial query logic in QuerySet methods and expose via model managers using `as_manager()`, for example:
-
-  ```python
-  class ProgrammingLanguageQuerySet(models.QuerySet):
-      def pinned(self):
-          return self.filter(is_pinned=True)
-
-  class ProgrammingLanguage(models.Model):
-      objects = ProgrammingLanguageQuerySet.as_manager()
-  ```
-
+- Follow existing placement of domain logic; use models for model-specific invariants and dedicated modules for multi-model workflows.
+- Put reusable or nontrivial query logic in QuerySet methods and expose via model managers using `as_manager()`
 - Compose QuerySet methods at call sites; avoid constructing complex ORM queries inline
 - Do not bypass ORM, serializers, or permissions without explicit justification
 - Generate migrations; do not hand-write migration files unless required and always review auto-generated migrations before committing
-- The Huey task queue runs `immediate: False`, so the consumer process does not auto-reload on code changes. After changing task code in `tasks.py`, restart the affected service before verifying behavior — do not assume a code change to a task took effect.
+- The Huey task queue runs `immediate: False`, so the consumer process does not auto-reload on code changes. After changing task code in `tasks.py`, restart the affected service before verifying behavior, do not assume a code change to a task took effect.
 
 ## Frontend Conventions (Vue)
 
+- Frontend naming: Use `snake_case` for app entrypoints and API composable modules, `camelCase` for store modules, `PascalCase` for Vue component files, and lowercase or `kebab-case` for directories. Examples: apps/release_editor.ts, composables/api/release_editor.ts, stores/releaseEditor.ts, and components/release-editor/App.vue.
 - Use Vue 3 Composition API with script setup
 - Prefer Bootstrap utility classes before custom styling
-- Keep API client logic in composables under `frontend/src/composables/api/`, for example:
-
-  ```ts
-  export function useContributorAPI() {
-    const { state, get, searchUrl } = useAxios("/contributors/");
-    async function search(params: UserSearchQueryParams) {
-      params.page = params.page || 1;
-      return get(searchUrl(params));
-    }
-    return { ...toRefs(state), search };
-  }
-  ```
-
+- Keep API client logic in composables under `frontend/src/composables/api/`
 - The Django REST API is not consistently transformed between snake_case and camelCase; `frontend/src/types.ts` has both conventions depending on whether a field is raw API response shape or a mapped view type. Check the existing type definition before assuming a field's casing.
 - Be careful with date parsing assumptions from API responses
 
 ## Testing Expectations
 
-- Add or update tests for behavior changes, bug fixes, and nontrivial logic
+- Add or update tests for bug fixes, behavior changes, and nontrivial logic.
 - Prefer targeted test execution during development
 - Use repository-standard containerized commands for running tests and tooling
 - For targeted Django tests, run exactly: `make test TEST_ARGS=<dotted.test.path>`
 - `make test` destroys and reinitializes the database from scratch on every run (via `deploy/test.sh`); never run it against a database whose state needs to be preserved
 - If `make test` fails in WSL with Docker daemon or credential-helper errors, prompt the user to start Docker Desktop for Windows and confirm before retrying
-- Do not change existing behavior without updating or adding tests
 
 ## Environment and Commands
 

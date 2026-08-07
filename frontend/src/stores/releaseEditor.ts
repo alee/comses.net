@@ -10,7 +10,7 @@ import type {
 } from "@/types";
 import { useCodebaseAPI, useReleaseEditorAPI } from "@/composables/api";
 
-export const useReleaseEditorStore = defineStore("releaseEditor", () => {
+export const useReleaseEditorStore = defineStore("release-editor", () => {
   const initialState = INITIAL_STATE;
 
   // state properties

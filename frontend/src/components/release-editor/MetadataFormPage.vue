@@ -112,7 +112,7 @@ import MultiSelectField from "@/components/form/MultiSelectField.vue";
 import FormAlert from "@/components/form/FormAlert.vue";
 import { useForm } from "@/composables/form";
 import { useReleaseEditorAPI } from "@/composables/api";
-import { useReleaseEditorStore } from "@/stores/releaseEditor";
+import { useReleaseEditorStore } from "@/stores/releaseEditor.js";
 import type { License, CodebaseReleaseMetadata } from "@/types";
 import ProgrammingLanguageListField from "../form/ProgrammingLanguageListField.vue";
 

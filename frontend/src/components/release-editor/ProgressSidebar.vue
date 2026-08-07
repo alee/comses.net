@@ -66,7 +66,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useReleaseEditorStore } from "@/stores/releaseEditor";
-import ProgressCheck from "@/components/releaseEditor/ProgressCheck.vue";
+import ProgressCheck from "@/components/release-editor/ProgressCheck.vue";
 
 export interface ProgressSidebarProps {
   showFiles: boolean;

@@ -34,7 +34,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
-import FileTree from "@/components/releaseEditor/FileTree.vue";
+import FileTree from "@/components/release-editor/FileTree.vue";
 import { useReleaseEditorStore } from "@/stores/releaseEditor";
 import { useReleaseEditorAPI } from "@/composables/api";
 import type { FileCategory, Folder } from "@/types";

@@ -28,5 +28,5 @@ export default withVueTs(
       "@typescript-eslint/no-require-imports": "off",
       "@typescript-eslint/no-unused-vars": ["warn", { varsIgnorePattern: "props" }],
     },
-  },
+  }
 );

@@ -68,8 +68,8 @@
 import { ref } from "vue";
 import type Modal from "bootstrap/js/dist/modal";
 import BootstrapModal from "@/components/BootstrapModal.vue";
-import ContributorSearch from "@/components/releaseEditor/ContributorSearch.vue";
-import ContributorEditForm from "@/components/releaseEditor/ContributorEditForm.vue";
+import ContributorSearch from "@/components/release-editor/ContributorSearch.vue";
+import ContributorEditForm from "@/components/release-editor/ContributorEditForm.vue";
 import type { Contributor } from "@/types";
 
 const props = withDefaults(

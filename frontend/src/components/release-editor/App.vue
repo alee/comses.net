@@ -89,11 +89,11 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
 import { useReleaseEditorStore } from "@/stores/releaseEditor";
-import ProgressSidebar from "@/components/releaseEditor/ProgressSidebar.vue";
-import CommonMediaModal from "@/components/releaseEditor/CommonMediaModal.vue";
-import CommonMetadataModal from "@/components/releaseEditor/CommonMetadataModal.vue";
-import ReviewModal from "@/components/releaseEditor/ReviewModal.vue";
-import PublishModal from "@/components/releaseEditor/PublishModal.vue";
+import ProgressSidebar from "@/components/release-editor/ProgressSidebar.vue";
+import CommonImagesModal from "@/components/release-editor/CommonImagesModal.vue";
+import CommonMetadataModal from "@/components/release-editor/CommonMetadataModal.vue";
+import ReviewModal from "@/components/release-editor/ReviewModal.vue";
+import PublishModal from "@/components/release-editor/PublishModal.vue";
 
 const props = defineProps<{
   identifier: string;

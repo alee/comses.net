@@ -3,11 +3,11 @@ import "vite/modulepreload-polyfill";
 import { createApp } from "vue";
 import { createPinia } from "pinia";
 import { createRouter, createWebHashHistory } from "vue-router";
-import App from "@/components/releaseEditor/App.vue";
-import MetadataFormPage from "@/components/releaseEditor/MetadataFormPage.vue";
-import UploadFormPage from "@/components/releaseEditor/UploadFormPage.vue";
-import ImportedArchivePage from "@/components/releaseEditor/ImportedArchivePage.vue";
-import ContributorsPage from "@/components/releaseEditor/ContributorsPage.vue";
+import App from "@/components/release-editor/App.vue";
+import MetadataFormPage from "@/components/release-editor/MetadataFormPage.vue";
+import UploadFormPage from "@/components/release-editor/UploadFormPage.vue";
+import ImportedArchivePage from "@/components/release-editor/ImportedArchivePage.vue";
+import ContributorsPage from "@/components/release-editor/ContributorsPage.vue";
 import { extractDataParams } from "@/util";
 
 const props = extractDataParams("release-editor", [

@@ -122,9 +122,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from "vue";
-import LocalReleaseItem from "@/components/githubIntegration/LocalReleaseItem.vue";
-import GitHubReleaseItem from "@/components/githubIntegration/GitHubReleaseItem.vue";
-import ReleaseSyncStatusCell from "@/components/githubIntegration/ReleaseSyncStatusCell.vue";
+import LocalReleaseItem from "@/components/github/LocalReleaseItem.vue";
+import GitHubReleaseItem from "@/components/github/GitHubReleaseItem.vue";
+import ReleaseSyncStatusCell from "@/components/github/ReleaseSyncStatusCell.vue";
 import FormAlert from "@/components/form/FormAlert.vue";
 import { useGitRemotesAPI } from "@/composables/api/git";
 import type {

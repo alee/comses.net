@@ -5,7 +5,7 @@ export * from "./event";
 export * from "./feeds";
 export * from "./job";
 export * from "./profile";
-export * from "./releaseEditor";
+export * from "./release_editor";
 export * from "./reviewEditor";
 export * from "./ror";
 export * from "./tags";

@@ -44,7 +44,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { useReleaseEditorAPI } from "@/composables/api/releaseEditor";
+import { useReleaseEditorAPI } from "@/composables/api/release_editor";
 import type { CodebaseReleaseWithGitRefSyncState } from "@/types";
 import BootstrapTooltip from "@/components/BootstrapTooltip.vue";
 

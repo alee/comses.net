@@ -84,11 +84,11 @@
 import { ref, computed, onMounted } from "vue";
 import { useGitRemotesAPI } from "@/composables/api/git";
 import BootstrapModal from "@/components/BootstrapModal.vue";
-import ConnectGitHubStep from "@/components/githubIntegration/ConnectGitHubStep.vue";
-import SelectSyncTypeStep from "@/components/githubIntegration/SelectSyncTypeStep.vue";
-import InstallGitHubAppStep from "@/components/githubIntegration/InstallGitHubAppStep.vue";
-import ConnectRepositoryStep from "@/components/githubIntegration/ConnectRepositoryStep.vue";
-import ReleaseManagementSection from "@/components/githubIntegration/ReleaseManagementSection.vue";
+import ConnectGitHubStep from "@/components/github/ConnectGitHubStep.vue";
+import SelectSyncTypeStep from "@/components/github/SelectSyncTypeStep.vue";
+import InstallGitHubAppStep from "@/components/github/InstallGitHubAppStep.vue";
+import ConnectRepositoryStep from "@/components/github/ConnectRepositoryStep.vue";
+import ReleaseManagementSection from "@/components/github/ReleaseManagementSection.vue";
 import FormAlert from "@/components/form/FormAlert.vue";
 import type { GitHubAppInstallationStatus, CodebaseGitRemote } from "@/types";
 
