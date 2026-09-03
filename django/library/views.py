@@ -41,6 +41,7 @@ from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from djangorestframework_camel_case.render import CamelCaseJSONRenderer
 
 from core.models import MemberProfile
 from core.permissions import ViewRestrictedObjectPermissions
@@ -1442,8 +1443,10 @@ class CodebaseReleaseViewSet(CommonViewSetMixin, NoDeleteViewSet):
 
         return response
 
-    @action(detail=True, methods=["get"])
+    @action(detail=True, methods=["get"], renderer_classes=[CamelCaseJSONRenderer])
     def download_preview(self, request, **kwargs):
+        # always render JSON here since there is no HTML template for this action and the
+        # default renderer negotiates to RootContextHTMLRenderer for browser requests
         codebase_release = self.get_object()
         fs_api = codebase_release.get_fs_api()
         contents = fs_api.list_sip_contents()

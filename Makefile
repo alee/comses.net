@@ -2,7 +2,7 @@ DOCKER_SHARED_DIR=docker/shared
 # shared directory subdirectories for postgres (data), frontend (vite), logs, static assets to be delivered by nginx
 # `data` directory is used for direct postgres db server-side outputs, e.g., postgres COPY commands issued in
 # ./manage.py export_raw_data
-DOCKER_SHARED_SUBDIRS=data vite logs library media static tests
+DOCKER_SHARED_SUBDIRS=data vite logs library media redis static tests
 
 BUILD_DIR=build
 SECRETS_DIR=${BUILD_DIR}/secrets
@@ -25,7 +25,7 @@ REPO_BACKUPS_PATH=${DOCKER_SHARED_DIR}/backups
 # DEPLOY_ENVIRONMENT must be set in config.mk
 include config.mk
 include .env
-
+PATH := $(HOME)/.local/bin:$(PATH)
 # export all variables
 # https://unix.stackexchange.com/questions/235223/makefile-include-env-file
 # https://www.gnu.org/software/make/manual/html_node/Variables_002fRecursion.html
@@ -177,3 +177,15 @@ e2e-deps: e2e-deps-update-lock
 .PHONY: gen-secret
 gen-secret:
 	@python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+
+.PHONY: check fix format
+check:
+	uv run ruff check .
+	uv run ruff format . --check
+
+fix:
+	uv run ruff check . --fix
+	uv run ruff format .
+
+format:
+	uv run ruff format .
