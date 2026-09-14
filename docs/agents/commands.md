@@ -32,10 +32,12 @@ docker compose exec vite npm run tls # vue tests, lint, prettier
 mv docker/shared/backups/repo "$(mktemp -d /tmp/comses.XXXXXX)"
 
 docker compose exec server inv db.backup borg.init borg.backup # backup db + fs into borg repo
+docker compose exec server tar -Jcf /shared/backups/repo.tar.xz -C /shared/backups repo
+docker compose cp server:/shared/backups/repo.tar.xz build/repo.tar.xz
 
 mv docker/shared/backups/repo ./working-repo # move repo somewhere safe
 
-make restore # restore from build/repo.tar.xz or BORG_REPO_URL
+make restore # restore from build/repo.tar.xz, downloading BORG_REPO_URL if absent
 
 # --- do some work, now assuming we do not need to keep this current state ---
 

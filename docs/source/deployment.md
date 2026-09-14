@@ -67,8 +67,10 @@ make restore
 What it does:
 
 1.  Runs build prerequisites and ensures generated compose/config artifacts exist.
-2.  Uses `build/repo.tar.xz` if present, otherwise downloads from `BORG_REPO_URL`.
-3.  Moves any existing `docker/shared/backups/repo` to a temporary directory for safety.
+2.  Uses `build/repo.tar.xz` if present, otherwise downloads it from
+    `BORG_REPO_URL` to that path.
+3.  Renames any existing `docker/shared/backups/repo` beside the repository with
+    a timestamp for safety.
 4.  Extracts the selected backup archive into `docker/shared/backups/`.
 5.  Starts services and runs `docker compose exec server inv borg.restore`.
 
@@ -87,6 +89,20 @@ docker compose exec server inv db.backup borg.init borg.backup
 ```
 
 This creates/updates backup data under `docker/shared/backups/repo`.
+`db.backup` atomically writes a PostgreSQL custom-format dump to
+`/shared/backups/latest/<database>.dump`. `borg.backup` archives that dump with
+the library, media, and repository files. Restore imports it with `pg_restore`
+before running Django migrations once.
+
+To package the Borg repository for `make restore`:
+
+```bash
+docker compose exec server tar -Jcf /shared/backups/repo.tar.xz -C /shared/backups repo
+docker compose cp server:/shared/backups/repo.tar.xz build/repo.tar.xz
+```
+
+Publish that bundle at `BORG_REPO_URL`, or retain it at `build/repo.tar.xz` for
+a local restore.
 
 If you need to preserve that snapshot while testing another restore:
 

@@ -36,7 +36,8 @@ build: docker-compose.yml secrets $(DOCKER_SHARED_DIR)
 	@docker compose build --pull --parallel $(DOCKER_BUILD_FLAGS)
 
 $(BORG_REPO_PATH):
-	wget -c ${BORG_REPO_URL} -P ${BUILD_DIR}
+	@mkdir -p $(@D)
+	wget -c ${BORG_REPO_URL} -O $@
 
 config.mk:
 	@envsubst < ${DEPLOY_CONF_DIR}/config.mk.template > config.mk
@@ -46,6 +47,14 @@ $(DOCKER_SHARED_DIR):
 	@for d in ${DOCKER_SHARED_SUBDIRS} ; do \
 		mkdir -p ${DOCKER_SHARED_DIR}/$$d ; \
 	done
+	@# Elasticsearch writes as UID 1000. Once prepared, this subtree may not be traversable by the host user.
+	@if [ ! -e ${DOCKER_SHARED_DIR}/elasticsearch ]; then \
+		mkdir -p ${DOCKER_SHARED_DIR}/elasticsearch/primary ${DOCKER_SHARED_DIR}/elasticsearch/secondary ; \
+		chmod 0777 ${DOCKER_SHARED_DIR}/elasticsearch ${DOCKER_SHARED_DIR}/elasticsearch/primary ${DOCKER_SHARED_DIR}/elasticsearch/secondary ; \
+	elif [ -w ${DOCKER_SHARED_DIR}/elasticsearch ]; then \
+		mkdir -p ${DOCKER_SHARED_DIR}/elasticsearch/primary ${DOCKER_SHARED_DIR}/elasticsearch/secondary ; \
+		chmod 0777 ${DOCKER_SHARED_DIR}/elasticsearch ${DOCKER_SHARED_DIR}/elasticsearch/primary ${DOCKER_SHARED_DIR}/elasticsearch/secondary ; \
+	fi
 
 ${SECRETS_DIR}:
 	@mkdir -p ${SECRETS_DIR}
@@ -114,15 +123,13 @@ $(REPO_BACKUPS_PATH):
 
 .PHONY: restore
 restore: build $(BORG_REPO_PATH) | $(REPO_BACKUPS_PATH)
-	# take ownership of the repo path as it may have been created by root / docker
-	# FIXME: this should be fixed if we have proper user management inside our server container
-	sudo chown -R ${USER}: $(REPO_BACKUPS_PATH)
-	# create repo directory if it doesn't exist
-	mkdir -p $(REPO_BACKUPS_PATH)/repo
-	# regardless of it existed, back it up to tmp dir
-	@echo "Backing existing ${REPO_BACKUPS_PATH}/repo to fresh mktemp directory in /tmp"
-	sudo mv $(REPO_BACKUPS_PATH)/repo $(shell mktemp -d)
-	tar -Jxf $(BORG_REPO_PATH) -C $(REPO_BACKUPS_PATH)
+	@stamp=$$(date -u +%Y%m%dT%H%M%SZ); \
+	if [ -e $(REPO_BACKUPS_PATH)/repo ]; then \
+		preserved=$(REPO_BACKUPS_PATH)/repo.pre-restore.$$stamp; \
+		echo "Preserving existing Borg repository at $$preserved"; \
+		sudo mv $(REPO_BACKUPS_PATH)/repo $$preserved; \
+	fi
+	sudo tar -Jxf $(BORG_REPO_PATH) -C $(REPO_BACKUPS_PATH)
 	docker compose up -d --quiet-pull
 	docker compose exec server inv borg.restore
 
