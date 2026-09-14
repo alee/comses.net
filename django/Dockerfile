@@ -5,7 +5,7 @@ ARG RUN_SCRIPT=./deploy/dev.sh
 ARG UBUNTU_MIRROR=archive.ubuntu.com
 ENV VIRTUAL_ENV "/home/comses/virtualenvs/comses.venv"
 # FIXME: this gets overridden by values in .env
-ENV PATH "${VIRTUAL_ENV}/bin:$PATH"
+ENV PATH "/usr/lib/postgresql/16/bin:${VIRTUAL_ENV}/bin:$PATH"
 
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -17,7 +17,6 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
         && yes | /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh \
         && apt-get -qq update \
         && apt-get -qq install -y --no-install-recommends -o=Dpkg::Use-Pty=0 \
-        autopostgresqlbackup \
         binutils \
         borgbackup \
         ca-certificates \
@@ -34,7 +33,7 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
         libpq-dev \
         libxml2-dev \
         libxslt-dev \
-        postgresql-client \
+        postgresql-client-16 \
         python3-dev \
         python3-gdal \
         python3-pip \
@@ -46,8 +45,8 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
         && python -m venv ${VIRTUAL_ENV} \
         && apt-get -qq upgrade -y -o Dpkg::Use-Pty=0 -o Dpkg::Options::="--force-confold" \
         && mkdir -p /etc/service/django /etc/service/huey \
-        && touch /etc/service/django/run /etc/service/huey/run /etc/postgresql-backup-pre \
-        && chmod a+x /etc/service/django/run /etc/service/huey/run /etc/postgresql-backup-pre \
+        && touch /etc/service/django/run /etc/service/huey/run \
+        && chmod a+x /etc/service/django/run /etc/service/huey/run \
         && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 WORKDIR /code
@@ -60,8 +59,6 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 COPY ./deploy/cron.daily/* /etc/cron.daily/
 COPY ./deploy/cron.hourly/* /etc/cron.hourly/
 COPY ./deploy/cron.weekly/* /etc/cron.weekly/
-COPY ./deploy/db/autopostgresqlbackup.conf /etc/default/autopostgresqlbackup
-COPY ./deploy/db/postgresql-backup-pre /etc/
 COPY ${RUN_SCRIPT} /etc/service/django/run
 COPY ./deploy/huey.sh /etc/service/huey/run
 COPY . /code

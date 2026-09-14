@@ -3,6 +3,7 @@ import shutil
 import tempfile
 
 from django.conf import settings
+from django.db import connections
 from invoke import task
 
 from . import database as db
@@ -143,13 +144,81 @@ def _restore_database(ctx, working_directory, target_database):
     dumpfile_dir = Path(working_directory) / backup_root_name / "latest"
     if not dumpfile_dir.exists():
         raise IOError("dumpfile_dir {} not found".format(dumpfile_dir))
-    dumpfile = str(list(dumpfile_dir.glob("comsesnet*"))[0])
+    database_name = settings.DATABASES[db._DEFAULT_DATABASE]["NAME"]
+    dumpfile_path = dumpfile_dir / f"{database_name}.dump"
+    if not dumpfile_path.exists():
+        legacy_dumpfiles = sorted(dumpfile_dir.glob(f"{database_name}*.sql*"))
+        if not legacy_dumpfiles:
+            raise FileNotFoundError(f"No database dump found in {dumpfile_dir}")
+        dumpfile_path = legacy_dumpfiles[-1]
     db.restore_from_dump(
         ctx,
         target_database=target_database,
-        dumpfile=dumpfile,
+        dumpfile=str(dumpfile_path),
         force=True,
+        migrate=False,
     )
+
+
+def repair_restored_migration_history(database):
+    """
+    Backups may contain schema changes that were applied before their migration
+    row was recorded. Repair only known safe cases before running migrations.
+    """
+    migration_app = "core"
+    migration_name = "0021_add_spam_moderation"
+    with connections[database].cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM django_migrations
+                WHERE app = %s AND name = %s
+            )
+            """,
+            [migration_app, migration_name],
+        )
+        migration_recorded = cursor.fetchone()[0]
+        if migration_recorded:
+            return
+
+        cursor.execute("""
+            SELECT
+                to_regclass('core_spammoderation') IS NOT NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'core_event'
+                        AND column_name = 'is_marked_spam'
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'core_event'
+                        AND column_name = 'spam_moderation_id'
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'core_job'
+                        AND column_name = 'is_marked_spam'
+                )
+                AND EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'core_job'
+                        AND column_name = 'spam_moderation_id'
+                )
+            """)
+        schema_exists = cursor.fetchone()[0]
+        if schema_exists:
+            cursor.execute(
+                """
+                INSERT INTO django_migrations (app, name, applied)
+                VALUES (%s, %s, now())
+                """,
+                [migration_app, migration_name],
+            )
 
 
 def _extract(ctx, repo, archive, paths=None):
@@ -219,6 +288,8 @@ def restore_database(
                 working_directory=working_directory,
                 target_database=target_database,
             )
+            repair_restored_migration_history(target_database)
+            ctx.run("/code/manage.py migrate")
 
 
 @task()
@@ -244,4 +315,5 @@ def restore(
             working_directory=working_directory,
             target_database=target_database,
         )
+        repair_restored_migration_history(target_database)
         ctx.run("/code/manage.py migrate")
