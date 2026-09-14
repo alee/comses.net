@@ -3,17 +3,13 @@
 </template>
 
 <script setup lang="ts">
-import Highcharts from "highcharts";
-import exportingInit from "highcharts/modules/exporting";
+import Highcharts from "@/highcharts";
 import mapInit from "highcharts/modules/map";
-import labelInit from "highcharts/modules/series-label";
 import { Chart } from "highcharts-vue";
 import world from "@/assets/world.geo.json";
 import proj4 from "proj4";
 import type { MetricsData } from "@/types";
 
-exportingInit(Highcharts); // required for hamburger menu w/ download options
-labelInit(Highcharts); // required for series labels on area charts
 mapInit(Highcharts); // required for map charts
 
 const props = defineProps<{

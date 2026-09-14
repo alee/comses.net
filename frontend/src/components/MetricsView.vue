@@ -42,18 +42,13 @@
 </template>
 
 <script setup lang="ts">
-import Highcharts from "highcharts";
-import exportingInit from "highcharts/modules/exporting";
-import labelInit from "highcharts/modules/series-label";
 import { Chart } from "highcharts-vue";
 import { ref, computed, onMounted } from "vue";
 import type { MetricsData, MetricsChartSelection, Metric } from "@/types";
+import "@/highcharts";
 import MetricsSelector from "@/components/MetricsSelector.vue";
 import MetricsTable from "@/components/MetricsTable.vue";
 import UserMapView from "@/components/UserMapView.vue";
-
-exportingInit(Highcharts); // required for hamburger menu w/ download options
-labelInit(Highcharts); // required for series labels on area charts
 
 const props = defineProps<{
   metricsData: MetricsData;
