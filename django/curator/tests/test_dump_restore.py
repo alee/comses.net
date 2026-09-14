@@ -57,7 +57,7 @@ class DumpRestoreTestCase(TestCase):
 
         os.makedirs(os.path.join(settings.BACKUP_ROOT, "latest"), exist_ok=True)
         self.database_dump_path = os.path.join(
-            settings.BACKUP_ROOT, "latest", "comsesnet_latest.sql"
+            settings.BACKUP_ROOT, "latest", "comsesnet.dump"
         )
 
     def test_dump_and_restore(self):
@@ -66,7 +66,7 @@ class DumpRestoreTestCase(TestCase):
         create_pgpass_file(ctx)
         dump_result = subprocess.run(
             shlex.split(
-                "pg_dump -h {HOST} -d {NAME} -U {USER} -f {dest}".format(
+                "pg_dump --format=custom -h {HOST} -d {NAME} -U {USER} -f {dest}".format(
                     **settings.DATABASES["default"], dest=self.database_dump_path
                 )
             ),
