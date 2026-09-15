@@ -38,12 +38,8 @@ EXTRACT_ROOT = path.join(SHARE_DIR, "extract")
 MEDIA_ROOT = path.join(SHARE_DIR, "media")
 
 DATABASES["dump_restore"] = {
-    "ENGINE": "django.db.backends.postgresql",
+    **DATABASES["default"],
     "NAME": "dump_restore_{}".format(os.getenv("DB_NAME")),
-    "USER": os.getenv("DB_USER"),
-    "PASSWORD": os.getenv("DB_PASSWORD"),
-    "HOST": os.getenv("DB_HOST"),
-    "PORT": os.getenv("DB_PORT"),
 }
 
 
