@@ -1,4 +1,4 @@
-/opt/comses.net/logs/comsesnet.log /opt/comses.net/logs/django.log /opt/comses.net/logs/uwsgi.log {
+/srv/logs/comses/comsesnet.log /srv/logs/comses/django.log /srv/logs/comses/uwsgi.log {
     rotate 8
     maxsize 50M
     dateext
@@ -9,11 +9,11 @@
     delaycompress
     sharedscripts
     postrotate
-        cd /opt/comses.net && docker compose exec cms touch /code/core/wsgi.py
+        cd /srv/apps/comses && docker compose exec -T server touch /code/core/wsgi.py
     endscript
 }
 
-/opt/comses.net/logs/nginx/*.log {
+/srv/logs/comses/nginx/*.log {
     dateext
 	missingok
 	notifempty
@@ -23,6 +23,6 @@
 	delaycompress
 	sharedscripts
 	postrotate
-		cd /opt/comses.net && docker compose restart nginx
+		cd /srv/apps/comses && docker compose exec -T nginx nginx -s reopen
 	endscript
 }

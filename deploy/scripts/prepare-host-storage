@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Infrastructure may override these IDs to match the pinned container images.
+DEPLOY_UID=${DEPLOY_UID:-1000}
+DEPLOY_GID=${DEPLOY_GID:-1000}
+APP_UID=${APP_UID:-0}
+APP_GID=${APP_GID:-0}
+POSTGRES_UID=${POSTGRES_UID:-999}
+POSTGRES_GID=${POSTGRES_GID:-999}
+REDIS_UID=${REDIS_UID:-999}
+REDIS_GID=${REDIS_GID:-1000}
+ELASTICSEARCH_UID=${ELASTICSEARCH_UID:-1000}
+ELASTICSEARCH_GID=${ELASTICSEARCH_GID:-0}
+NGINX_UID=${NGINX_UID:-101}
+NGINX_GID=${NGINX_GID:-101}
+
+APP_ROOT=${COMSES_APP_ROOT:-/srv/apps/comses}
+SHARED_ROOT=${COMSES_SHARED_ROOT:-/srv/apps/comses/docker/shared}
+POSTGRES_ROOT=${COMSES_POSTGRES_ROOT:-/srv/apps/comses/docker/pgdata}
+LOG_ROOT=${COMSES_LOG_ROOT:-/srv/logs/comses}
+SECRETS_ROOT=${COMSES_SECRETS_ROOT:-/srv/apps/comses/docker/secrets}
+
+die() {
+    echo "prepare-host-storage: $*" >&2
+    exit 1
+}
+
+contains_data() {
+    local path=$1
+    [ -d "$path" ] && find -P "$path" -mindepth 1 -print -quit | grep -q .
+}
+
+[ "$(id -u)" -eq 0 ] || die "run as root (normally from infrastructure automation)"
+[ "$APP_ROOT" = /srv/apps/comses ] || die "deployed APP_ROOT must be /srv/apps/comses"
+[ "$SHARED_ROOT" = /srv/apps/comses/docker/shared ] || die "deployed SHARED_ROOT must be /srv/apps/comses/docker/shared"
+[ "$POSTGRES_ROOT" = /srv/apps/comses/docker/pgdata ] || die "deployed POSTGRES_ROOT must be /srv/apps/comses/docker/pgdata"
+[ "$LOG_ROOT" = /srv/logs/comses ] || die "deployed LOG_ROOT must be /srv/logs/comses"
+[ "$SECRETS_ROOT" = /srv/apps/comses/docker/secrets ] || die "deployed SECRETS_ROOT must be /srv/apps/comses/docker/secrets"
+[ -d "$APP_ROOT" ] || die "$APP_ROOT must already contain the application checkout"
+[ ! -L "$APP_ROOT" ] || die "$APP_ROOT must not be a symlink"
+[ "$(realpath -e "$APP_ROOT")" = "$APP_ROOT" ] || die "$APP_ROOT resolves through a symlink"
+for path in "$APP_ROOT" /srv; do
+    mount_target=$(findmnt -n -o TARGET -T "$path") || die "cannot identify the filesystem containing $path"
+    [ "$mount_target" != / ] || die "$path is on the root filesystem; mount Cinder-backed /srv storage first"
+done
+if contains_data "$SHARED_ROOT/postgres"; then
+    die "$SHARED_ROOT/postgres contains PostgreSQL data and would be exposed to the server container; reconcile it with $POSTGRES_ROOT according to docs/agents/postgresql-upgrade-runbook.md"
+fi
+if contains_data "$APP_ROOT/build/secrets" && contains_data "$SECRETS_ROOT" && [ "${COMSES_STORAGE_AUTHORITY:-}" != new ]; then
+    die "both legacy build/secrets and docker/secrets contain secret material; compare them and select the authority according to docs/agents/storage-layout.md"
+fi
+
+for path in "$SHARED_ROOT" "$POSTGRES_ROOT" "$LOG_ROOT" "$SECRETS_ROOT"; do
+    [ ! -L "$path" ] || die "refusing to operate on symlink $path"
+    [ "$(realpath -m "$path")" = "$path" ] || die "refusing path that resolves through a symlink: $path"
+done
+for path in \
+    "$SHARED_ROOT/.latest" \
+    "$SHARED_ROOT/backups" \
+    "$SHARED_ROOT/backups/repo" \
+    "$SHARED_ROOT/data" \
+    "$SHARED_ROOT/elasticsearch" \
+    "$SHARED_ROOT/elasticsearch/primary" \
+    "$SHARED_ROOT/elasticsearch/secondary" \
+    "$SHARED_ROOT/extract" \
+    "$SHARED_ROOT/incoming" \
+    "$SHARED_ROOT/library" \
+    "$SHARED_ROOT/media" \
+    "$SHARED_ROOT/redis" \
+    "$SHARED_ROOT/repository" \
+    "$SHARED_ROOT/static" \
+    "$SHARED_ROOT/statistics" \
+    "$SHARED_ROOT/tests" \
+    "$SHARED_ROOT/tls" \
+    "$SHARED_ROOT/tls/well-known" \
+    "$SHARED_ROOT/uploads" \
+    "$SHARED_ROOT/vite" \
+    "$LOG_ROOT/nginx"; do
+    [ ! -L "$path" ] || die "refusing to operate on managed symlink $path"
+done
+
+# install -d changes only each named directory. It never recursively changes
+# ownership across the checkout or a durable tree.
+install -d -o "$APP_UID" -g "$APP_GID" -m 0755 "$SHARED_ROOT"
+for path in .latest data extract incoming library media repository static statistics tests tls tls/well-known uploads vite; do
+    install -d -o "$APP_UID" -g "$APP_GID" -m 0755 "$SHARED_ROOT/$path"
+done
+install -d -o "$DEPLOY_UID" -g "$DEPLOY_GID" -m 0750 \
+    "$SHARED_ROOT/backups" "$SHARED_ROOT/backups/repo"
+install -d -o "$POSTGRES_UID" -g "$POSTGRES_GID" -m 0700 "$POSTGRES_ROOT"
+install -d -o "$REDIS_UID" -g "$REDIS_GID" -m 0750 "$SHARED_ROOT/redis"
+install -d -o "$ELASTICSEARCH_UID" -g "$ELASTICSEARCH_GID" -m 0750 \
+    "$SHARED_ROOT/elasticsearch" \
+    "$SHARED_ROOT/elasticsearch/primary" \
+    "$SHARED_ROOT/elasticsearch/secondary"
+install -d -o "$APP_UID" -g "$APP_GID" -m 0755 "$LOG_ROOT"
+install -d -o "$NGINX_UID" -g "$NGINX_GID" -m 0750 "$LOG_ROOT/nginx"
+install -d -o "$DEPLOY_UID" -g "$DEPLOY_GID" -m 0700 "$SECRETS_ROOT"
+while IFS= read -r -d '' secret_file; do
+    chown "$DEPLOY_UID:$DEPLOY_GID" "$secret_file"
+    chmod 0600 "$secret_file"
+done < <(find -P "$SECRETS_ROOT" -mindepth 1 -maxdepth 1 -type f -print0)
+if [ -f "$APP_ROOT/.env" ]; then
+    chown "$DEPLOY_UID:$DEPLOY_GID" "$APP_ROOT/.env"
+    chmod 0600 "$APP_ROOT/.env"
+fi
+
+echo "Prepared CoMSES writable paths without recursively changing ownership."

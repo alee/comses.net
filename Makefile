@@ -1,11 +1,13 @@
-DOCKER_SHARED_DIR=docker/shared
-# shared directory subdirectories for postgres (data), frontend (vite), logs, static assets to be delivered by nginx
+DOCKER_SHARED_DIR=$(COMSES_SHARED_ROOT)
+# Writable shared paths. Deployed hosts provision these before Compose starts;
+# this target retains the convenient repository-local behavior for development.
 # `data` directory is used for direct postgres db server-side outputs, e.g., postgres COPY commands issued in
 # ./manage.py export_raw_data
-DOCKER_SHARED_SUBDIRS=data vite logs library media redis static tests
+DOCKER_SHARED_SUBDIRS=.latest backups data extract incoming library media redis repository static statistics tests tls/well-known uploads vite
+DOCKER_LOG_SUBDIRS=nginx
 
 BUILD_DIR=build
-SECRETS_DIR=${BUILD_DIR}/secrets
+SECRETS_DIR=${COMSES_SECRETS_ROOT}
 DB_PASSWORD_PATH=${SECRETS_DIR}/db_password
 PGPASS_PATH=${SECRETS_DIR}/.pgpass
 SECRET_KEY_PATH=${SECRETS_DIR}/django_secret_key
@@ -25,6 +27,19 @@ REPO_BACKUPS_PATH=${DOCKER_SHARED_DIR}/backups
 # DEPLOY_ENVIRONMENT must be set in config.mk
 include config.mk
 include .env
+ifneq ($(filter staging prod,$(DEPLOY_ENVIRONMENT)),)
+COMSES_APP_ROOT ?= /srv/apps/comses
+COMSES_SHARED_ROOT ?= /srv/apps/comses/docker/shared
+COMSES_POSTGRES_ROOT ?= /srv/apps/comses/docker/pgdata
+COMSES_LOG_ROOT ?= /srv/logs/comses
+COMSES_SECRETS_ROOT ?= /srv/apps/comses/docker/secrets
+else
+COMSES_APP_ROOT ?= $(CURDIR)
+COMSES_SHARED_ROOT ?= $(COMSES_APP_ROOT)/docker/shared
+COMSES_POSTGRES_ROOT ?= $(COMSES_APP_ROOT)/docker/pgdata
+COMSES_LOG_ROOT ?= $(COMSES_SHARED_ROOT)/logs
+COMSES_SECRETS_ROOT ?= $(COMSES_APP_ROOT)/build/secrets
+endif
 PATH := $(HOME)/.local/bin:$(PATH)
 # export all variables
 # https://unix.stackexchange.com/questions/235223/makefile-include-env-file
@@ -55,13 +70,17 @@ $(DOCKER_SHARED_DIR):
 		mkdir -p ${DOCKER_SHARED_DIR}/elasticsearch/primary ${DOCKER_SHARED_DIR}/elasticsearch/secondary ; \
 		chmod 0777 ${DOCKER_SHARED_DIR}/elasticsearch ${DOCKER_SHARED_DIR}/elasticsearch/primary ${DOCKER_SHARED_DIR}/elasticsearch/secondary ; \
 	fi
+	@for d in ${DOCKER_LOG_SUBDIRS} ; do \
+		mkdir -p ${COMSES_LOG_ROOT}/$$d ; \
+	done
 
 ${SECRETS_DIR}:
 	@mkdir -p ${SECRETS_DIR}
 
 $(SECRET_KEY_PATH): | ${SECRETS_DIR}
 	@SECRET_KEY=$$(openssl rand -base64 48); \
-	echo "$${SECRET_KEY}" > $(SECRET_KEY_PATH)
+	echo "$${SECRET_KEY}" > $(SECRET_KEY_PATH); \
+	chmod 0600 $(SECRET_KEY_PATH)
 
 $(DB_PASSWORD_PATH): | ${SECRETS_DIR}
 	@DB_PASSWORD=$$(openssl rand -base64 48); \
@@ -70,7 +89,8 @@ $(DB_PASSWORD_PATH): | ${SECRETS_DIR}
 	then \
 	  cp "$(DB_PASSWORD_PATH)" "$(DB_PASSWORD_PATH)_$$TODAY"; \
 	fi; \
-	echo "$${DB_PASSWORD}" > $(DB_PASSWORD_PATH)
+	echo "$${DB_PASSWORD}" > $(DB_PASSWORD_PATH); \
+	chmod 0600 $(DB_PASSWORD_PATH)
 	@echo "db password at $(DB_PASSWORD_PATH) was reset, may need to manually update existing db password"
 
 $(PGPASS_PATH): $(DB_PASSWORD_PATH) | ${SECRETS_DIR}
@@ -80,6 +100,7 @@ $(PGPASS_PATH): $(DB_PASSWORD_PATH) | ${SECRETS_DIR}
 .PHONY: release-version
 release-version: .env
 	@$(ENVREPLACE) RELEASE_VERSION $$(git describe --tags --abbrev=1 2>/dev/null || git rev-parse --short HEAD) .env
+	@chmod 0600 .env
 
 .env: $(DB_PASSWORD_PATH) $(SECRET_KEY_PATH)
 	@if [ ! -f .env ]; then \
@@ -87,7 +108,8 @@ release-version: .env
 	fi; \
 	# $(ENVREPLACE) DB_PASSWORD $$(cat $(DB_PASSWORD_PATH)) .env; \
 	# $(ENVREPLACE) SECRET_KEY $$(cat $(SECRET_KEY_PATH)) .env; \
-	$(ENVREPLACE) TEST_BASIC_AUTH_PASSWORD $$(openssl rand -base64 42) .env
+	$(ENVREPLACE) TEST_BASIC_AUTH_PASSWORD $$(openssl rand -base64 42) .env; \
+	chmod 0600 .env
 
 .PHONY: docker-compose.yml
 docker-compose.yml: base.yml dev.yml staging.yml test.yml prod.yml config.mk $(PGPASS_PATH) release-version .env
@@ -105,10 +127,13 @@ set-db-password: $(DB_PASSWORD_PATH) .env
 secrets: $(SECRETS_DIR) $(GENERATED_SECRETS)
 	@for secret_path in $(EXT_SECRETS); do \
 		touch ${SECRETS_DIR}/$$secret_path; \
+		chmod 0600 ${SECRETS_DIR}/$$secret_path; \
 	done
 
 .PHONY: deploy
-deploy: build
+deploy:
+	@deploy/scripts/storage-preflight
+	+@$(MAKE) build
 	docker compose pull -q db redis elasticsearch
 ifneq ($(DEPLOY_ENVIRONMENT),dev)
 	docker compose pull -q nginx
@@ -116,6 +141,26 @@ endif
 	docker compose up -d --quiet-pull
 	sleep 42
 	docker compose exec server inv prepare
+
+.PHONY: prepare-host-storage
+prepare-host-storage:
+	deploy/scripts/prepare-host-storage
+
+.PHONY: storage-preflight
+storage-preflight:
+	@deploy/scripts/storage-preflight
+
+.PHONY: verify-compose-storage
+verify-compose-storage: docker-compose.yml
+	@deploy/scripts/verify-compose-storage
+
+.PHONY: verify-container-storage
+verify-container-storage: verify-compose-storage
+	docker compose run --rm --no-deps --entrypoint sh server -c 'grep -F " /shared " /proc/mounts && grep -F " /shared/logs " /proc/mounts && test -d /shared/backups && test ! -e /shared/postgres'
+	docker compose run --rm --no-deps --entrypoint sh db -c 'grep -F " /var/lib/postgresql/data " /proc/mounts'
+ifneq ($(filter staging prod,$(DEPLOY_ENVIRONMENT)),)
+	docker compose run --rm --no-deps --entrypoint sh nginx -c 'grep -F " /var/log/nginx " /proc/mounts && grep -F " /srv/media " /proc/mounts'
+endif
 
 $(REPO_BACKUPS_PATH):
 	@echo "$(REPO_BACKUPS_PATH) did not exist, creating now"
@@ -135,8 +180,11 @@ restore: build $(BORG_REPO_PATH) | $(REPO_BACKUPS_PATH)
 
 .PHONY: clean
 clean:
-	@echo "Backing up generated files to /tmp directory"
-	mv .env config.mk docker-compose.yml $(shell mktemp -d)
+	@stamp=$$(date -u +%Y%m%dT%H%M%SZ); \
+	destination=$(COMSES_SECRETS_ROOT)/generated-config-$$stamp; \
+	install -d -m 0700 $$destination; \
+	echo "Preserving generated configuration at $$destination"; \
+	mv .env config.mk docker-compose.yml $$destination/
 
 .PHONY: clean_deploy
 clean_deploy: clean

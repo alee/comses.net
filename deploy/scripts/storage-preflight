@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT=${COMSES_APP_ROOT:-$(pwd -P)}
+SHARED_ROOT=${COMSES_SHARED_ROOT:-$APP_ROOT/docker/shared}
+POSTGRES_ROOT=${COMSES_POSTGRES_ROOT:-$APP_ROOT/docker/pgdata}
+LOG_ROOT=${COMSES_LOG_ROOT:-$SHARED_ROOT/logs}
+SECRETS_ROOT=${COMSES_SECRETS_ROOT:-$APP_ROOT/build/secrets}
+DEPLOY_ENVIRONMENT=${DEPLOY_ENVIRONMENT:-dev}
+DEPLOY_UID=${DEPLOY_UID:-1000}
+DEPLOY_GID=${DEPLOY_GID:-1000}
+APP_UID=${APP_UID:-0}
+APP_GID=${APP_GID:-0}
+POSTGRES_UID=${POSTGRES_UID:-999}
+POSTGRES_GID=${POSTGRES_GID:-999}
+REDIS_UID=${REDIS_UID:-999}
+REDIS_GID=${REDIS_GID:-1000}
+ELASTICSEARCH_UID=${ELASTICSEARCH_UID:-1000}
+ELASTICSEARCH_GID=${ELASTICSEARCH_GID:-0}
+NGINX_UID=${NGINX_UID:-101}
+NGINX_GID=${NGINX_GID:-101}
+
+die() {
+    echo "storage-preflight: $*" >&2
+    exit 1
+}
+
+contains_data() {
+    local path=$1 first_entry
+    [ -d "$path" ] || return 1
+    if ! first_entry=$(find -P "$path" -mindepth 1 -print -quit 2>/dev/null); then
+        die "cannot inspect $path; verify it as root before selecting the authoritative PostgreSQL cluster"
+    fi
+    [ -n "$first_entry" ]
+}
+
+require_owner_mode() {
+    local path=$1 expected=$2 actual
+    actual=$(stat -c '%u:%g %a' "$path")
+    [ "$actual" = "$expected" ] || die "$path has owner/mode $actual; expected $expected"
+}
+
+EXPOSED_POSTGRES_ROOT="$SHARED_ROOT/postgres"
+if [ "${COMSES_POSTGRES_AUTHORITY:-}" != isolated ] && contains_data "$EXPOSED_POSTGRES_ROOT"; then
+    if contains_data "$POSTGRES_ROOT"; then
+        die "both $POSTGRES_ROOT and $EXPOSED_POSTGRES_ROOT contain PostgreSQL data; identify the authoritative cluster before selecting COMSES_POSTGRES_AUTHORITY=isolated"
+    fi
+    die "$EXPOSED_POSTGRES_ROOT contains PostgreSQL data; stop services and move it to isolated storage at $POSTGRES_ROOT according to docs/agents/postgresql-upgrade-runbook.md"
+fi
+
+if [[ "$DEPLOY_ENVIRONMENT" != staging && "$DEPLOY_ENVIRONMENT" != prod ]]; then
+    df -P "$APP_ROOT"
+    echo "Storage preflight passed for $DEPLOY_ENVIRONMENT; build will create repository-local writable paths."
+    exit 0
+fi
+
+if [[ "$DEPLOY_ENVIRONMENT" == staging || "$DEPLOY_ENVIRONMENT" == prod ]]; then
+    [ "$APP_ROOT" = /srv/apps/comses ] || die "COMSES_APP_ROOT must be /srv/apps/comses for $DEPLOY_ENVIRONMENT"
+    [ "$(pwd -P)" = "$APP_ROOT" ] || die "run from the canonical checkout $APP_ROOT (symlinks are not accepted)"
+    [ "$SHARED_ROOT" = /srv/apps/comses/docker/shared ] || die "COMSES_SHARED_ROOT must be /srv/apps/comses/docker/shared"
+    [ "$POSTGRES_ROOT" = /srv/apps/comses/docker/pgdata ] || die "COMSES_POSTGRES_ROOT must be /srv/apps/comses/docker/pgdata"
+    [ "$LOG_ROOT" = /srv/logs/comses ] || die "COMSES_LOG_ROOT must be /srv/logs/comses"
+    [ "$SECRETS_ROOT" = /srv/apps/comses/docker/secrets ] || die "COMSES_SECRETS_ROOT must be /srv/apps/comses/docker/secrets"
+
+    for path in "$APP_ROOT" "$SHARED_ROOT" "$POSTGRES_ROOT" "$LOG_ROOT" "$SECRETS_ROOT"; do
+        [ -e "$path" ] || die "required path is missing: $path; run deploy/scripts/prepare-host-storage as root"
+        [ ! -L "$path" ] || die "deployed path must not be a symlink: $path"
+        [ "$(realpath -e "$path")" = "$path" ] || die "deployed path resolves through a symlink: $path"
+    done
+    for path in \
+        "$SHARED_ROOT/backups/repo" \
+        "$SHARED_ROOT/elasticsearch/primary" \
+        "$SHARED_ROOT/elasticsearch/secondary" \
+        "$SHARED_ROOT/library" \
+        "$SHARED_ROOT/media" \
+        "$POSTGRES_ROOT" \
+        "$SHARED_ROOT/redis" \
+        "$SHARED_ROOT/static" \
+        "$SHARED_ROOT/tls/well-known" \
+        "$LOG_ROOT/nginx"; do
+        [ -d "$path" ] || die "required managed directory is missing: $path"
+        [ ! -L "$path" ] || die "managed directory must not be a symlink: $path"
+        [ "$(realpath -e "$path")" = "$path" ] || die "managed directory resolves through a symlink: $path"
+    done
+    for path in "$APP_ROOT" "$LOG_ROOT"; do
+        mount_target=$(findmnt -n -o TARGET -T "$path") || die "cannot identify the filesystem containing $path"
+        [ "$mount_target" != / ] || die "$path is on the root filesystem, not Cinder-backed /srv storage"
+    done
+    if [ -d "$APP_ROOT/build/secrets" ] && [ "${COMSES_STORAGE_AUTHORITY:-}" != new ]; then
+        die "legacy build/secrets still exists; verify the in-place secret copy and set COMSES_STORAGE_AUTHORITY=new before deployment"
+    fi
+    require_owner_mode "$SHARED_ROOT" "$APP_UID:$APP_GID 755"
+    require_owner_mode "$SHARED_ROOT/backups" "$DEPLOY_UID:$DEPLOY_GID 750"
+    require_owner_mode "$POSTGRES_ROOT" "$POSTGRES_UID:$POSTGRES_GID 700"
+    require_owner_mode "$SHARED_ROOT/redis" "$REDIS_UID:$REDIS_GID 750"
+    require_owner_mode "$SHARED_ROOT/elasticsearch/primary" "$ELASTICSEARCH_UID:$ELASTICSEARCH_GID 750"
+    require_owner_mode "$SHARED_ROOT/elasticsearch/secondary" "$ELASTICSEARCH_UID:$ELASTICSEARCH_GID 750"
+    require_owner_mode "$LOG_ROOT" "$APP_UID:$APP_GID 755"
+    require_owner_mode "$LOG_ROOT/nginx" "$NGINX_UID:$NGINX_GID 750"
+    require_owner_mode "$SECRETS_ROOT" "$DEPLOY_UID:$DEPLOY_GID 700"
+fi
+
+for path in "$SHARED_ROOT" "$POSTGRES_ROOT" "$LOG_ROOT" "$SECRETS_ROOT"; do
+    [ -d "$path" ] || die "required directory is missing: $path"
+done
+[ -w "$SECRETS_ROOT" ] || die "secret directory is not writable by the deployment user: $SECRETS_ROOT"
+
+df -P "$SHARED_ROOT" "$LOG_ROOT"
+echo "Storage preflight passed for $DEPLOY_ENVIRONMENT."

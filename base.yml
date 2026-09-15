@@ -3,8 +3,17 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     volumes:
-      - ./deploy/conf/redis.conf:/usr/local/etc/redis/redis.conf
-      - ./docker/shared/redis:/data
+      - type: bind
+        source: ${COMSES_APP_ROOT:-.}/deploy/conf/redis.conf
+        target: /usr/local/etc/redis/redis.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}/redis
+        target: /data
+        bind:
+          create_host_path: false
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_VERSION}
     healthcheck:
@@ -30,16 +39,37 @@ services:
         soft: 65536
         hard: 65536
     volumes:
-      - ./deploy/elasticsearch.conf.d/log4j2.properties:/usr/share/elasticsearch/config/log4j2.properties
-      - esdata:/usr/share/elasticsearch/data
+      - type: bind
+        source: ${COMSES_APP_ROOT:-.}/deploy/elasticsearch.conf.d/log4j2.properties
+        target: /usr/share/elasticsearch/config/log4j2.properties
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}/elasticsearch/primary
+        target: /usr/share/elasticsearch/data
+        bind:
+          create_host_path: false
   db:
     image: postgis/postgis:16-3.5
     secrets:
       - db_password
     volumes:
-      - ./docker/pgdata:/var/lib/postgresql/data
-      - ./build/secrets/db_password:/run/secrets/db_password
-      - ./docker/shared:/shared
+      - type: bind
+        source: ${COMSES_POSTGRES_ROOT:-./docker/pgdata}
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}
+        target: /shared
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_LOG_ROOT:-./docker/shared/logs}
+        target: /shared/logs
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 30s
@@ -55,8 +85,11 @@ services:
       target: dev
     image: comses/vite
     volumes:
-      - ./docker/shared:/shared
-      - ./build/secrets/config.ini:/run/secrets/config.ini
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}
+        target: /shared
+        bind:
+          create_host_path: false
   server:
     build: django
     image: comses/server
@@ -75,9 +108,28 @@ services:
       - mail_api_key
       - youtube_api_key
     volumes:
-      - ./deploy/elasticsearch.conf.d:/etc/elasticsearch
-      - ./docker/shared:/shared
-      - ./.env:/etc/environment
+      - type: bind
+        source: ${COMSES_APP_ROOT:-.}/deploy/elasticsearch.conf.d
+        target: /etc/elasticsearch
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}
+        target: /shared
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_LOG_ROOT:-./docker/shared/logs}
+        target: /shared/logs
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_APP_ROOT:-.}/.env
+        target: /etc/environment
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       db:
         condition: service_healthy
@@ -92,32 +144,28 @@ services:
 
 secrets:
   datacite_api_password:
-    file: ./build/secrets/datacite_api_password
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/datacite_api_password
   db_password:
-    file: ./build/secrets/db_password
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/db_password
   discourse_api_key:
-    file: ./build/secrets/discourse_api_key
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/discourse_api_key
   discourse_sso_secret:
-    file: ./build/secrets/discourse_sso_secret
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/discourse_sso_secret
   django_secret_key:
-    file: ./build/secrets/django_secret_key
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/django_secret_key
   github_client_secret:
-    file: ./build/secrets/github_client_secret
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/github_client_secret
   github_integration_app_private_key:
-    file: ./build/secrets/github_integration_app_private_key
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/github_integration_app_private_key
   github_integration_app_webhook_secret:
-    file: ./build/secrets/github_integration_app_webhook_secret
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/github_integration_app_webhook_secret
   hcaptcha_secret:
-    file: ./build/secrets/hcaptcha_secret
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/hcaptcha_secret
   librarian_sso_secret:
-    file: ./build/secrets/librarian_sso_secret
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/librarian_sso_secret
   mail_api_key:
-    file: ./build/secrets/mail_api_key
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/mail_api_key
   orcid_client_secret:
-    file: ./build/secrets/orcid_client_secret
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/orcid_client_secret
   youtube_api_key:
-    file: ./build/secrets/youtube_api_key
-
-volumes:
-  esdata:
-    driver: local
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/youtube_api_key
