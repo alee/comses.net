@@ -1,4 +1,7 @@
+import gzip
 import os
+import tempfile
+from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -87,3 +90,56 @@ class MigrationRestoreTaskTests(TestCase):
             run_mock.call_args.args[0],
         )
         self.assertIn("pg_restore", run_mock.call_args.args[0])
+
+    @patch("curator.invoke_tasks.database.drop")
+    @patch("curator.invoke_tasks.database.get_database_settings")
+    def test_legacy_dump_that_creates_database_restores_through_template1(
+        self, get_database_settings, drop
+    ):
+        get_database_settings.return_value = {
+            "db_name": "comsesnet",
+            "db_host": "db",
+            "db_user": "comsesnet",
+            "db_password": "secret",
+        }
+        ctx = Context()
+        with tempfile.TemporaryDirectory() as directory:
+            dumpfile = Path(directory) / "comsesnet.sql.gz"
+            with gzip.open(dumpfile, "wt", encoding="utf-8") as stream:
+                stream.write(
+                    "CREATE DATABASE comsesnet WITH TEMPLATE = template0;\n"
+                    "\\connect comsesnet\n"
+                )
+            with patch.object(ctx, "run") as run_mock:
+                restore_from_dump(
+                    ctx, dumpfile=str(dumpfile), force=True, migrate=False
+                )
+
+        drop.assert_called_once_with(ctx, database="default", create=False)
+        self.assertIn("-h db template1 comsesnet", run_mock.call_args.args[0])
+        self.assertIn("--set=ON_ERROR_STOP=1", run_mock.call_args.args[0])
+
+    @patch("curator.invoke_tasks.database.drop")
+    @patch("curator.invoke_tasks.database.get_database_settings")
+    def test_legacy_dump_rejects_a_different_created_database(
+        self, get_database_settings, drop
+    ):
+        get_database_settings.return_value = {
+            "db_name": "comsesnet",
+            "db_host": "db",
+            "db_user": "comsesnet",
+            "db_password": "secret",
+        }
+        ctx = Context()
+        with tempfile.TemporaryDirectory() as directory:
+            dumpfile = Path(directory) / "other.sql"
+            dumpfile.write_text(
+                "CREATE DATABASE other_database WITH TEMPLATE = template0;\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "not target"):
+                restore_from_dump(
+                    ctx, dumpfile=str(dumpfile), force=True, migrate=False
+                )
+
+        drop.assert_not_called()

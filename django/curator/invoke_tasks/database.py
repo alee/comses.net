@@ -1,15 +1,20 @@
-from datetime import datetime
+import gzip
 import logging
 import os
 import pathlib
+import re
+from datetime import datetime
 
+from core.utils import confirm
 from django.conf import settings
 from invoke import task
 
-from core.utils import confirm
 from .utils import dj
 
 _DEFAULT_DATABASE = "default"
+_CREATE_DATABASE_RE = re.compile(
+    r'^CREATE DATABASE (?:(?:"((?:[^"]|"")*)")|([^\s;]+))(?:\s|;)', re.MULTILINE
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +97,17 @@ def _dump_database(ctx, database, dumpfile):
     )
     ctx.run(f"pg_restore --list {temporary_dumpfile} >/dev/null", echo=True)
     os.replace(temporary_dumpfile, dumpfile)
+
+
+def _database_created_by_plain_dump(dumpfile):
+    """Return the database created by a legacy plain-text dump, if present."""
+    opener = gzip.open if dumpfile.suffix == ".gz" else open
+    with opener(dumpfile, mode="rt", encoding="utf-8", errors="replace") as stream:
+        header = stream.read(64 * 1024)
+    match = _CREATE_DATABASE_RE.search(header)
+    if match is None:
+        return None
+    return match.group(1).replace('""', '"') if match.group(1) else match.group(2)
 
 
 @task(aliases=["dm"])
@@ -206,9 +222,8 @@ def restore_from_dump(
                 dumpfile
             )
         )
-    cat_cmd = "zcat" if dumpfile.endswith(".sql.gz") else "cat"
-    drop(ctx, database=target_database, create=True)
     if dumpfile.endswith(".dump"):
+        drop(ctx, database=target_database, create=True)
         ctx.run(
             "pg_restore --exit-on-error --no-owner --host={db_host} "
             "--username={db_user} --dbname={db_name} {dumpfile}".format(
@@ -217,10 +232,26 @@ def restore_from_dump(
             echo=True,
         )
     else:
+        created_database = _database_created_by_plain_dump(dumpfile_path)
+        if created_database is not None and created_database != db_config["db_name"]:
+            raise ValueError(
+                f"legacy dump creates database {created_database!r}, not target "
+                f"{db_config['db_name']!r}"
+            )
+        dump_creates_database = created_database is not None
+        drop(ctx, database=target_database, create=not dump_creates_database)
+        restore_database = (
+            "template1" if dump_creates_database else db_config["db_name"]
+        )
+        cat_cmd = "zcat" if dumpfile.endswith(".sql.gz") else "cat"
         ctx.run(
             "{cat_cmd} {dumpfile} | psql -w --set=ON_ERROR_STOP=1 -q "
-            "-o restore-from-dump-log.txt -h {db_host} {db_name} {db_user}".format(
-                cat_cmd=cat_cmd, dumpfile=dumpfile, **db_config
+            "-o restore-from-dump-log.txt -h {db_host} {restore_database} "
+            "{db_user}".format(
+                cat_cmd=cat_cmd,
+                dumpfile=dumpfile,
+                restore_database=restore_database,
+                **db_config,
             ),
             echo=True,
         )
