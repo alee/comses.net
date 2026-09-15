@@ -83,17 +83,12 @@ def main() -> int:
             or mount.get("bind", {}).get("create_host_path") is not False
         ):
             errors.append(
-                f"{service_name}:{target} resolved to "
-                f"{mount.get('type')}:{mount.get('source')} read_only={mount.get('read_only')}, "
-                f"expected bind:{expected_source} read_only={expected_read_only}"
+                f"{service_name}: mount at {target} does not match the storage contract"
             )
     for secret_name, secret in config.get("secrets", {}).items():
         expected_secret = f"{secrets_root}/{secret_name}"
         if secret.get("file") != expected_secret:
-            errors.append(
-                f"secret {secret_name} resolves to {secret.get('file')}, "
-                f"expected {expected_secret}"
-            )
+            errors.append("a Compose secret file does not match the storage contract")
     for service_name, service in config.get("services", {}).items():
         if service_name == "db":
             continue
@@ -102,13 +97,11 @@ def main() -> int:
                 continue
             source = mount.get("source")
             if source and os.path.commonpath((source, postgres_root)) == source:
-                errors.append(
-                    f"{service_name}:{mount.get('target')} exposes PostgreSQL data through {source}"
-                )
+                errors.append("a non-database service bind mount exposes PostgreSQL data")
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print(f"Rendered Compose storage mounts match the {environment} contract.")
+    print("Rendered Compose storage mounts match the configured environment contract.")
     return 0
 
 
