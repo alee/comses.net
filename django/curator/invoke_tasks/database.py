@@ -90,6 +90,7 @@ def _dump_database(ctx, database, dumpfile):
         ),
         echo=True,
     )
+    ctx.run(f"pg_restore --list {temporary_dumpfile} >/dev/null", echo=True)
     os.replace(temporary_dumpfile, dumpfile)
 
 
@@ -108,21 +109,23 @@ def dump_migration(ctx, database=_DEFAULT_DATABASE, force=False):
 @task(aliases=["r"])
 def reset(ctx):
     drop(ctx, create=True)
-    run_migrations(ctx, False)
+    run_migrations(ctx)
 
 
 @task(aliases=["init"])
-def run_migrations(ctx, clean=False, initial=False):
-    apps = ("core", "home", "library", "curator")
-    if clean:
-        for app in apps:
-            migration_dir = os.path.join(app, "migrations")
-            ctx.run("find {0} -name 00*.py -delete -print".format(migration_dir))
-    dj(ctx, "makemigrations {0} --noinput".format(" ".join(apps)))
+def run_migrations(ctx, initial=False):
+    """Apply migration files committed to the application image."""
     migrate_command = "migrate --noinput"
     if initial:
         migrate_command += " --fake-initial"
     dj(ctx, migrate_command)
+
+
+@task(name="make-migrations", aliases=["mm"])
+def make_migrations(ctx):
+    """Generate migration files explicitly during development."""
+    apps = ("core", "home", "library", "curator")
+    dj(ctx, "makemigrations {0} --noinput".format(" ".join(apps)))
 
 
 @task(aliases=["d"])
@@ -222,4 +225,8 @@ def restore_from_dump(
             echo=True,
         )
     if migrate:
-        run_migrations(ctx, clean=clean_migration, initial=True)
+        if clean_migration:
+            raise ValueError(
+                "clean_migration is no longer supported; migration files must be committed"
+            )
+        run_migrations(ctx, initial=True)

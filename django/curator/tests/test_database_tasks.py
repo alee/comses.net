@@ -30,12 +30,34 @@ class MigrationDumpTaskTests(TestCase):
 
         create_pgpass_file.assert_called_once_with(ctx, db_key="default")
         mkdir.assert_called_once_with(parents=True, exist_ok=True)
-        run_mock.assert_called_once()
+        self.assertEqual(run_mock.call_count, 2)
         replace.assert_called_once()
         self.assertIn(
             "/migration-artifacts/20260523T220000/comsesnet.dump.tmp",
-            run_mock.call_args.args[0],
+            run_mock.call_args_list[0].args[0],
         )
+        self.assertIn("pg_restore --list", run_mock.call_args_list[1].args[0])
+
+    @patch("curator.invoke_tasks.database.os.replace")
+    @patch("curator.invoke_tasks.database.create_pgpass_file")
+    @patch("curator.invoke_tasks.database.get_database_settings")
+    @patch("curator.invoke_tasks.database.pathlib.Path.mkdir")
+    def test_dump_is_not_promoted_when_validation_fails(
+        self, mkdir, get_database_settings, create_pgpass_file, replace
+    ):
+        get_database_settings.return_value = {
+            "db_name": "comsesnet",
+            "db_host": "db",
+            "db_user": "comsesnet",
+            "db_password": "secret",
+        }
+        ctx = Context()
+
+        with patch.object(ctx, "run", side_effect=[None, RuntimeError("invalid dump")]):
+            with self.assertRaisesRegex(RuntimeError, "invalid dump"):
+                dump_migration(ctx, force=True)
+
+        replace.assert_not_called()
 
 
 class MigrationRestoreTaskTests(TestCase):

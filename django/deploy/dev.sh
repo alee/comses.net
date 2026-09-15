@@ -9,9 +9,9 @@ initdb() {
     cd /code;
     if [ "$CLEAN_DATABASE" = "true" ]; then
         echo "Destroying and initializing database from scratch"
-        invoke db.init --clean
+        invoke db.reset
     else
-        echo "Using existing db schema"
+        echo "Applying committed database migrations"
         invoke db.init
     fi
 }

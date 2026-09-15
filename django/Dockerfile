@@ -39,6 +39,7 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
         python3-pip \
         python3-setuptools \
         python3-venv \
+        rsync \
         unrar-free \
         unzip \
         && update-alternatives --install /usr/bin/python python /usr/bin/python3 1000 \
@@ -59,6 +60,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 COPY ./deploy/cron.daily/* /etc/cron.daily/
 COPY ./deploy/cron.hourly/* /etc/cron.hourly/
 COPY ./deploy/cron.weekly/* /etc/cron.weekly/
+COPY ./deploy/cron.monthly/* /etc/cron.monthly/
 COPY ${RUN_SCRIPT} /etc/service/django/run
 COPY ./deploy/huey.sh /etc/service/huey/run
 COPY . /code
