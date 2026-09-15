@@ -12,6 +12,10 @@ Template files:
 Shared command index:
 
 - `commands.md`: minimal list of commonly used operational commands for humans and agents.
+- `backup-restore-runbook.md`: canonical backup, verification, recovery, and
+  restore-drill procedure.
+- `storage-layout.md`: canonical deployed `/srv` path map, migration, rollback,
+  ownership, and mount-verification runbook.
 
 Recommended usage:
 
