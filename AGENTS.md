@@ -89,6 +89,7 @@ This platform manages scientific software artifacts and publication metadata. Th
 - Use repository-standard containerized commands for running tests and tooling
 - For targeted Django tests, run exactly: `make test TEST_ARGS=<dotted.test.path>`
 - `make test` destroys and reinitializes the database from scratch on every run (via `deploy/test.sh`); never run it against a database whose state needs to be preserved
+- Known test-scaffolding gotcha: Django tests currently generate the next numbered `library` migration, typically altering storage-backed file fields. This is an expected, environment-specific artifact; do not commit it or treat its appearance as production migration drift or database corruption without independent evidence. Remove the generated migration after the test run if it remains in the worktree.
 - If `make test` fails in WSL with Docker daemon or credential-helper errors, prompt the user to start Docker Desktop for Windows and confirm before retrying
 - Do not change existing behavior without updating or adding tests
 

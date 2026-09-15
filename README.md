@@ -84,7 +84,7 @@ Building and installing from a fresh clone of the repository can be done by:
 1. `$ make build`
 2. Edit the generated `config.mk` and set `BORG_REPO_URL` to a packaged Borg
    repository (`repo.tar.xz`), or place that bundle at `build/repo.tar.xz`.
-3. `$ make restore`
+3. `$ make restore` (see `docs/agents/backup-restore-runbook.md` before replacing existing state)
 
 ### Debugging
 

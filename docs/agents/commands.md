@@ -6,8 +6,11 @@ This page is a minimal index of commonly used operational commands.
 
 - Local app URL: http://localhost:8000 (server service)
 - Compose environment is selected via config.mk DEPLOY_ENVIRONMENT (dev, staging, test, prod)
-- Runtime config is in .env and secrets are in build/secrets
-- Shared volume docker/shared/:/shared stores model files, media, backups, and bundles
+- Deployed commands run from `/srv/apps/comses`; local commands run from the checkout root
+- Deployed shared state is `/srv/apps/comses/docker/shared`; PostgreSQL is isolated at `/srv/apps/comses/docker/pgdata`
+- Logs are `/srv/logs/comses`, and secrets are `/srv/apps/comses/docker/secrets`
+- Full storage and migration contract: `docs/agents/storage-layout.md`
+- Backup and restore runbook: `docs/agents/backup-restore-runbook.md`
 - Canonical deployment procedures: docs/source/deployment.md
 
 Guidelines:
@@ -22,28 +25,21 @@ Guidelines:
 docker compose exec server inv sh # django shell
 docker compose exec server inv db.sh # postgres shell
 docker compose exec server ./manage.py # django management commands, migrations, etc.
+docker compose exec server inv db.make-migrations # explicitly generate migration files
 docker compose logs [server|vite|...] # service logs
 docker compose exec vite npm run tls # vue tests, lint, prettier
 ```
 
 ## Backup And Restore Workflow (Borg)
 
+See `docs/agents/backup-restore-runbook.md` before restoring production state.
+
 ```bash
-mv docker/shared/backups/repo "$(mktemp -d /tmp/comses.XXXXXX)"
-
-docker compose exec server inv db.backup borg.init borg.backup # backup db + fs into borg repo
-docker compose exec server tar -Jcf /shared/backups/repo.tar.xz -C /shared/backups repo
-docker compose cp server:/shared/backups/repo.tar.xz build/repo.tar.xz
-
-mv docker/shared/backups/repo ./working-repo # move repo somewhere safe
-
-make restore # restore from build/repo.tar.xz, downloading BORG_REPO_URL if absent
-
-# --- do some work, now assuming we do not need to keep this current state ---
-
-mv ./working-repo docker/shared/backups/repo # move desired backup back
-
-docker compose exec server inv borg.restore # restore to saved state
+docker compose exec server inv borg.init borg.backup-all # locked, validated DB + filesystem backup
+docker compose exec server inv borg.list # list available restore points
+docker compose exec server inv borg.prune # locked monthly retention task
+docker compose exec server inv borg.restore --archive="<archive>" # destructive full restore
+make restore # destructive local restore from packaged/downloaded Borg repository
 ```
 
 ## Django Test Commands
