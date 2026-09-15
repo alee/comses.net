@@ -1,9 +1,11 @@
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import fcntl
 from pathlib import Path
 import shutil
 import tempfile
 
 from django.conf import settings
-from django.db import connections
 from invoke import task
 
 from . import database as db
@@ -12,6 +14,7 @@ from core.utils import confirm
 DEFAULT_LIBRARY_BASENAME = Path(settings.LIBRARY_ROOT).name
 DEFAULT_MEDIA_BASENAME = Path(settings.MEDIA_ROOT).name
 DEFAULT_REPOSITORY_BASENAME = Path(settings.REPOSITORY_ROOT).name
+MAX_PRUNE_BACKUP_AGE_SECONDS = 2 * 24 * 60 * 60
 
 
 @task(aliases=["init"])
@@ -25,8 +28,7 @@ def borg_list(ctx):
     ctx.run(f"borg list {settings.BORG_ROOT}", echo=True, env=environment())
 
 
-@task(aliases=["prune", "p"])
-def borg_prune(ctx):
+def _prune(ctx):
     # FIXME: provide cli override of these defaults
     daily = 14
     weekly = 4
@@ -40,13 +42,24 @@ def borg_prune(ctx):
     ctx.run(f"borg compact --verbose {settings.BORG_ROOT}")
 
 
+@task(name="prune", aliases=["p"])
+def borg_prune(ctx):
+    success_path = Path(settings.BACKUP_ROOT) / "last-successful-backup"
+    if not success_path.is_file():
+        raise RuntimeError("refusing to prune without a successful backup marker")
+    marker_age = datetime.now(timezone.utc).timestamp() - success_path.stat().st_mtime
+    if marker_age > MAX_PRUNE_BACKUP_AGE_SECONDS:
+        raise RuntimeError("refusing to prune: last successful backup is too old")
+
+    with exclusive_backup_operation("prune"):
+        _prune(ctx)
+
+
 @task(aliases=["b"])
 def backup(ctx):
     share = settings.SHARE_DIR
     repo = settings.BORG_ROOT
-    # Borg recognizes {now} as the current timestamp
-    #  http://borgbackup.readthedocs.io/en/stable/usage/help.html#borg-help-placeholders
-    archive = "{utcnow}"
+    archive = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     share_path = Path(share)
     library_root = Path(settings.LIBRARY_ROOT)
     media_root = Path(settings.MEDIA_ROOT)
@@ -71,6 +84,48 @@ def backup(ctx):
             echo=True,
             env=environment(),
         )
+    check_archive(ctx, repo, archive)
+    return archive
+
+
+def check_archive(ctx, repo, archive):
+    ctx.run(
+        f'borg check --verify-data {repo}::"{archive}"',
+        echo=True,
+        env=environment(),
+    )
+
+
+@task(name="backup-all")
+def backup_all(ctx):
+    """Create and verify one database and filesystem backup under a shared lock."""
+    backup_root = Path(settings.BACKUP_ROOT)
+    success_path = backup_root / "last-successful-backup"
+
+    with exclusive_backup_operation("backup"):
+        db.backup(ctx)
+        archive = backup(ctx)
+        timestamp = datetime.now(timezone.utc).isoformat()
+        temporary_success_path = success_path.with_suffix(".tmp")
+        temporary_success_path.write_text(
+            f"timestamp={timestamp}\narchive={archive}\n", encoding="ascii"
+        )
+        temporary_success_path.replace(success_path)
+
+
+@contextmanager
+def exclusive_backup_operation(operation):
+    backup_root = Path(settings.BACKUP_ROOT)
+    backup_root.mkdir(parents=True, exist_ok=True)
+    lock_path = backup_root / ".backup.lock"
+    with lock_path.open("a+") as lockfile:
+        try:
+            fcntl.flock(lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(
+                f"another backup operation is running; cannot start {operation}"
+            ) from exc
+        yield
 
 
 def delete_latest_uncompressed_backup(
@@ -160,67 +215,6 @@ def _restore_database(ctx, working_directory, target_database):
     )
 
 
-def repair_restored_migration_history(database):
-    """
-    Backups may contain schema changes that were applied before their migration
-    row was recorded. Repair only known safe cases before running migrations.
-    """
-    migration_app = "core"
-    migration_name = "0021_add_spam_moderation"
-    with connections[database].cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM django_migrations
-                WHERE app = %s AND name = %s
-            )
-            """,
-            [migration_app, migration_name],
-        )
-        migration_recorded = cursor.fetchone()[0]
-        if migration_recorded:
-            return
-
-        cursor.execute("""
-            SELECT
-                to_regclass('core_spammoderation') IS NOT NULL
-                AND EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_name = 'core_event'
-                        AND column_name = 'is_marked_spam'
-                )
-                AND EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_name = 'core_event'
-                        AND column_name = 'spam_moderation_id'
-                )
-                AND EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_name = 'core_job'
-                        AND column_name = 'is_marked_spam'
-                )
-                AND EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_name = 'core_job'
-                        AND column_name = 'spam_moderation_id'
-                )
-            """)
-        schema_exists = cursor.fetchone()[0]
-        if schema_exists:
-            cursor.execute(
-                """
-                INSERT INTO django_migrations (app, name, applied)
-                VALUES (%s, %s, now())
-                """,
-                [migration_app, migration_name],
-            )
-
-
 def _extract(ctx, repo, archive, paths=None):
     extract_cmd = 'borg extract {repo}::"{archive}"'.format(repo=repo, archive=archive)
     if paths:
@@ -244,19 +238,20 @@ def get_latest_borg_backup_archive_name(ctx, repo):
     return archive
 
 
-def _restore(ctx, repo, archive, working_directory, target_database, progress=True):
+def _restore(ctx, repo, archive, working_directory, target_database):
     # Note that working directory is passed as argument. This makes it simpler to use either
     # a persistent directory (for testing and debugging) or a temporary directory
     if archive is None:
         archive = get_latest_borg_backup_archive_name(ctx, repo=repo)
 
+    check_archive(ctx, repo, archive)
     with ctx.cd(working_directory):
-        delete_latest_uncompressed_backup()
         _extract(ctx, repo=repo, archive=archive)
-        _restore_files(working_directory)
         _restore_database(
             ctx, working_directory=working_directory, target_database=target_database
         )
+        ctx.run("/code/manage.py migrate")
+        _restore_files(working_directory)
 
 
 @task(aliases=["rf"])
@@ -265,9 +260,9 @@ def restore_files(ctx, repo=settings.BORG_ROOT, archive=None):
     if archive is None:
         archive = get_latest_borg_backup_archive_name(ctx, repo=repo)
 
+    check_archive(ctx, repo, archive)
     with tempfile.TemporaryDirectory(dir=settings.SHARE_DIR) as working_directory:
         with ctx.cd(working_directory):
-            delete_latest_uncompressed_backup()
             _extract(ctx, repo, archive)
             _restore_files(working_directory)
 
@@ -280,6 +275,7 @@ def restore_database(
     if archive is None:
         archive = get_latest_borg_backup_archive_name(ctx, repo=repo)
 
+    check_archive(ctx, repo, archive)
     with tempfile.TemporaryDirectory(dir=settings.SHARE_DIR) as working_directory:
         with ctx.cd(working_directory):
             _extract(ctx, repo, archive, ["backups"])
@@ -288,7 +284,6 @@ def restore_database(
                 working_directory=working_directory,
                 target_database=target_database,
             )
-            repair_restored_migration_history(target_database)
             ctx.run("/code/manage.py migrate")
 
 
@@ -315,5 +310,3 @@ def restore(
             working_directory=working_directory,
             target_database=target_database,
         )
-        repair_restored_migration_history(target_database)
-        ctx.run("/code/manage.py migrate")

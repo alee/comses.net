@@ -17,4 +17,4 @@ if [ ! -x "$INV_BIN" ]; then
 fi
 
 printf '%s inv=%s\n' "$(date -Iseconds)" "$INV_BIN"
-exec "$INV_BIN" -r /code db.backup borg.backup
+exec "$INV_BIN" -r /code borg.backup-all
