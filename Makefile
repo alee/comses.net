@@ -40,6 +40,14 @@ COMSES_POSTGRES_ROOT ?= $(COMSES_APP_ROOT)/docker/pgdata
 COMSES_LOG_ROOT ?= $(COMSES_SHARED_ROOT)/logs
 COMSES_SECRETS_ROOT ?= $(COMSES_APP_ROOT)/build/secrets
 endif
+
+# Deployed hosts are provisioned explicitly; local and CI Compose bind mounts
+# must exist because create_host_path is intentionally disabled.
+COMPOSE_STORAGE_PREREQUISITES :=
+ifeq ($(filter staging prod,$(DEPLOY_ENVIRONMENT)),)
+COMPOSE_STORAGE_PREREQUISITES := $(DOCKER_SHARED_DIR) $(COMSES_POSTGRES_ROOT)
+endif
+
 PATH := $(HOME)/.local/bin:$(PATH)
 # export all variables
 # https://unix.stackexchange.com/questions/235223/makefile-include-env-file
@@ -73,6 +81,9 @@ $(DOCKER_SHARED_DIR):
 	@for d in ${DOCKER_LOG_SUBDIRS} ; do \
 		mkdir -p ${COMSES_LOG_ROOT}/$$d ; \
 	done
+
+$(COMSES_POSTGRES_ROOT):
+	@mkdir -p $@
 
 ${SECRETS_DIR}:
 	@mkdir -p ${SECRETS_DIR}
@@ -112,7 +123,8 @@ release-version: .env
 	chmod 0600 .env
 
 .PHONY: docker-compose.yml
-docker-compose.yml: base.yml dev.yml staging.yml test.yml prod.yml config.mk $(PGPASS_PATH) release-version .env
+docker-compose.yml: base.yml dev.yml staging.yml test.yml prod.yml config.mk \
+	$(PGPASS_PATH) release-version .env $(COMPOSE_STORAGE_PREREQUISITES)
 	@case "$(DEPLOY_ENVIRONMENT)" in \
 	  dev|staging|test) docker compose -f base.yml -f $(DEPLOY_ENVIRONMENT).yml config > docker-compose.yml;; \
 	  prod) docker compose -f base.yml -f staging.yml -f $(DEPLOY_ENVIRONMENT).yml config > docker-compose.yml;; \
