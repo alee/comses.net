@@ -3,19 +3,59 @@
 This runbook is the canonical host-path contract for staging and production.
 Development keeps repository-local defaults.
 
+## Infrastructure/application ownership boundary
+
+Two distinct ownership policies apply on deployed hosts:
+
+- **Infrastructure owns the canonical collaborative bind roots** `/srv/logs/comses`
+  and `/srv/backups/comses`, plus the checkout paths they are bind-mounted onto
+  (`docker/shared/logs` and `docker/shared/backups`). Infrastructure bind-mounts
+  each canonical `/srv/*` path onto its checkout counterpart, so both paths
+  expose the *same inode*. Infrastructure applies its own collaborative access
+  policy to these roots, typically `debian:operators 2775`. The application
+  does not require, and must not enforce, one exact owner/group/mode on these
+  two roots: `deploy/scripts/storage-preflight` validates them for security and
+  functionality instead (existence, no symlinks, correct filesystem, not
+  world-writable, effective read/write access, and that the bind target and
+  checkout source resolve to the same filesystem object), and
+  `deploy/scripts/prepare-host-storage` never chowns or chmods them.
+- **The application owns and strictly validates every other private or
+  service-specific path** beneath `/srv/apps/comses/docker` — `docker/shared`
+  (excluding the `backups` and `logs` subdirectories), `docker/pgdata`,
+  `docker/secrets`, Redis state, Elasticsearch primary/secondary state, the
+  nginx log subdirectory nested under the collaborative logs root, and other
+  application-managed private state. These require an exact numeric
+  owner/group/mode because the pinned container images run as fixed UIDs/GIDs
+  that need precisely that access, no more and no less.
+
+Logs and backups are collaborative because they are the paths operators need
+to read, rotate, ship, or replicate outside of application control (log
+shipping, Borg replication, retention). Making them exclusively
+application-owned would either lock operators out or force infrastructure to
+fight the application over ownership on every deploy; making them
+application-private with an exact mode is also physically impossible here,
+since the bind mount means `/srv/logs/comses` and `docker/shared/logs` (and
+similarly for backups) are the same object, so infrastructure's `debian:operators
+2775` and any conflicting application-required exact mode cannot both hold.
+The setgid bit and group-writable access for the `operators` group are
+therefore expected and accepted; `storage-preflight` still fails closed on
+world-writable modes or group-writable access by any group other than the
+application, deployment, or operators group.
+
 ## Path classification
 
-| Class | Host path | Container path / consumer | Owner and mode |
-|---|---|---|---|
-| 1. Source-controlled, replaceable | `/srv/apps/comses` excluding `docker/`, `.env`, and generated `docker-compose.yml` | build contexts and read-only configuration binds | deployment user; normal checkout modes |
-| 2. Durable application state | `/srv/apps/comses/docker/shared/{library,media,repository,data,incoming,.latest}` | `/shared/*`; selected paths are read-only in nginx | `0:0`; directories `0755` |
-| 2. PostgreSQL state | `/srv/apps/comses/docker/pgdata` | db `/var/lib/postgresql/data`; not mounted by server | `999:999`; `0700` |
-| 6. Disposable cache or generated state | `/srv/apps/comses/docker/shared/{redis,elasticsearch,static,vite,statistics,tests,extract,uploads}` | Redis, Elasticsearch, collected assets, exports, tests, and temporary upload/restore data | Redis `999:1000` `0750`; Elasticsearch `1000:0` `0750`; remaining directories `0:0` `0755` |
-| 2. ACME challenge state | `/srv/apps/comses/docker/shared/tls/well-known` | nginx `/srv/.well-known` | `0:0`; `0755` |
-| 3. Durable logs | `/srv/logs/comses` and `/srv/logs/comses/nginx` | server/db `/shared/logs`; nginx `/var/log/nginx` | root `0755`; nginx `101:101` `0750` |
-| 4. Backup data | `/srv/apps/comses/docker/shared/backups` (Borg `repo`, imports, DB dumps, and preserved clusters) | `/shared/backups`; Borg uses `/shared/backups/repo` | deployment UID/GID (default `1000:1000`); `0750` |
-| 5. Secret material | `/srv/apps/comses/docker/secrets` and `/srv/apps/comses/.env` | Compose secrets and runtime environment | deployment user; directory `0700`, files `0600` |
-| 6. Disposable state | Compose `sockets` volume, container writable layers, and Docker-managed service stdout | Unix sockets and runtime scratch data | service-specific; no authoritative data |
+| Class | Host path | Container path / consumer | Owner and mode | Authority |
+|---|---|---|---|---|
+| 1. Source-controlled, replaceable | `/srv/apps/comses` excluding `docker/`, `.env`, and generated `docker-compose.yml` | build contexts and read-only configuration binds | deployment user; normal checkout modes | Application (checkout) |
+| 2. Durable application state | `/srv/apps/comses/docker/shared/{library,media,repository,data,incoming,.latest}` | `/shared/*`; selected paths are read-only in nginx | `0:0`; directories `0755` | Application (exact) |
+| 2. PostgreSQL state | `/srv/apps/comses/docker/pgdata` | db `/var/lib/postgresql/data`; not mounted by server | `999:999`; `0700` | Application (exact) |
+| 6. Disposable cache or generated state | `/srv/apps/comses/docker/shared/{redis,elasticsearch,static,vite,statistics,tests,extract,uploads}` | Redis, Elasticsearch, collected assets, exports, tests, and temporary upload/restore data | Redis `999:1000` `0750`; Elasticsearch `1000:0` `0750`; remaining directories `0:0` `0755` | Application (exact) |
+| 2. ACME challenge state | `/srv/apps/comses/docker/shared/tls/well-known` | nginx `/srv/.well-known` | `0:0`; `0755` | Application (exact) |
+| 3. Durable logs | `/srv/logs/comses`, bind-mounted onto `docker/shared/logs` (same inode) | server/db `/shared/logs`; nginx `/var/log/nginx` mounts the nested `nginx` subdirectory | infrastructure collaborative policy, typically `debian:operators 2775`; not world-writable | **Infrastructure** (collaborative root) |
+| 3. nginx log subdirectory | `/srv/logs/comses/nginx` | nginx `/var/log/nginx` | `101:101`; `0750` | Application (exact, nested in an infrastructure root) |
+| 4. Backup data | `/srv/backups/comses`, bind-mounted onto `docker/shared/backups` (same inode; Borg `repo`, imports, DB dumps, and preserved clusters) | `/shared/backups`; Borg uses `/shared/backups/repo` | infrastructure collaborative policy, typically `debian:operators 2775`; not world-writable | **Infrastructure** (collaborative root) |
+| 5. Secret material | `/srv/apps/comses/docker/secrets` and `/srv/apps/comses/.env` | Compose secrets and runtime environment | deployment user; directory `0700`, files `0600` | Application (exact) |
+| 6. Disposable state | Compose `sockets` volume, container writable layers, and Docker-managed service stdout | Unix sockets and runtime scratch data | service-specific; no authoritative data | Application/Docker runtime |
 
 The application-local Borg repository remains `/shared/backups/repo` inside the
 server container. Infrastructure replicates it to
@@ -35,11 +75,23 @@ The UID/GID values match the currently pinned images and are parameters to
 `deploy/scripts/prepare-host-storage`. Confirm them after an image change with
 `docker run --rm --entrypoint id <image>` before changing infrastructure.
 
+`COMSES_BACKUPS_ROOT` (default `/srv/backups/comses`) names the canonical
+backups bind root the same way `COMSES_LOG_ROOT` names the canonical logs bind
+root. Neither variable is consumed directly by Compose; Compose binds
+`docker/shared` (which contains `backups`) and `COMSES_LOG_ROOT` as today.
+`storage-preflight` uses `COMSES_BACKUPS_ROOT` only to confirm the
+infrastructure bind mount is in place and resolves to the same filesystem
+object as `docker/shared/backups`.
+
 ## Infrastructure preparation
 
 The checkout must already exist at the physical path `/srv/apps/comses`; it
-must not be a symlink. Verify that `/srv/apps/comses` and `/srv/logs/comses`
-resolve to Cinder-backed filesystems rather than `/`, then run:
+must not be a symlink. Infrastructure is responsible for bind-mounting
+`/srv/logs/comses` onto `docker/shared/logs` and `/srv/backups/comses` onto
+`docker/shared/backups` before `prepare-host-storage` runs, and for applying
+its collaborative ownership policy to those two roots. Verify that
+`/srv/apps/comses` and `/srv/logs/comses` resolve to Cinder-backed filesystems
+rather than `/`, then run:
 
 ```bash
 cd /srv/apps/comses
@@ -47,9 +99,14 @@ sudo deploy/scripts/prepare-host-storage
 deploy/scripts/storage-preflight
 ```
 
-The preparation script is idempotent. It creates and repairs only the exact
-writable directories listed above. It does not recursively traverse the
-checkout or a durable tree and rejects a symlink at any managed root.
+The preparation script is idempotent. It creates and repairs the exact
+private/service-owned directories listed above; it never chowns or chmods
+`docker/shared/logs`/`/srv/logs/comses` or `docker/shared/backups`/
+`/srv/backups/comses` themselves, since infrastructure owns those roots. It
+may still create application-owned child paths inside them (e.g.
+`docker/shared/backups/repo`) without changing their owner or mode. It does
+not recursively traverse the checkout or a durable tree and rejects a symlink
+at any managed root.
 
 For staging and production, `config.mk` must resolve these values:
 
@@ -58,6 +115,7 @@ COMSES_APP_ROOT=/srv/apps/comses
 COMSES_SHARED_ROOT=/srv/apps/comses/docker/shared
 COMSES_POSTGRES_ROOT=/srv/apps/comses/docker/pgdata
 COMSES_LOG_ROOT=/srv/logs/comses
+COMSES_BACKUPS_ROOT=/srv/backups/comses
 COMSES_SECRETS_ROOT=/srv/apps/comses/docker/secrets
 ```
 
@@ -69,6 +127,18 @@ the repository, Redis state, and the Borg repository are already in their final
 locations. PostgreSQL remains isolated at `docker/pgdata`; only logs, secrets,
 and the nginx ACME challenge path change host locations. Run this procedure
 independently on each host, staging first.
+
+Migrating to the shared collaborative ownership policy on an already-migrated
+host is an infrastructure-side, in-place ownership change: infrastructure
+re-applies `debian:operators 2775` (or leaves its existing equivalent policy)
+to `/srv/logs/comses` and `/srv/backups/comses`; no data moves. Re-run
+`deploy/scripts/storage-preflight` afterward to confirm the new policy still
+passes. If infrastructure needs to roll back to a stricter single-owner mode on
+these two roots temporarily, `storage-preflight` still accepts a non-broad,
+non-collaborative mode (e.g. `root:root 0755`) on logs/backups, since it only
+fails closed on world-writable or unexpectedly broad group access; it does not
+require the `operators` group. Rolling back the ownership policy therefore
+never requires re-running `prepare-host-storage` or touching application state.
 
 These steps copy rather than move data. The old paths and Elasticsearch named
 volumes remain available for rollback. Run each block separately and stop when
