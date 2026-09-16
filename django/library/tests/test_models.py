@@ -2,6 +2,7 @@ import logging
 import pathlib
 import semver
 import uuid
+from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
@@ -77,6 +78,26 @@ class CodebaseTest(BaseModelTestCase):
 
         self.assertEqual(draft_release.input_data_url, source_release.input_data_url)
         self.assertEqual(draft_release.output_data_url, source_release.output_data_url)
+
+    def test_new_draft_attributes_submitter_override_not_codebase_submitter(self):
+        # the codebase submitter (self.c1.submitter) is self.user, but a different
+        # authorized user (e.g. a contributor/curator) may create a subsequent release
+        source_release = ReleaseSetup.setUpPublishableDraftRelease(self.c1)
+        source_release.publish()
+        other_user = UserFactory().create()
+
+        draft_release = self.c1.get_or_create_draft(submitter=other_user)
+
+        self.assertEqual(draft_release.submitter, other_user)
+        self.assertNotEqual(self.c1.submitter, other_user)
+
+    def test_publish_syncs_release_submitter_to_discourse(self):
+        release = ReleaseSetup.setUpPublishableDraftRelease(self.c1)
+        with patch(
+            "library.tasks.sync_release_submitter_to_discourse"
+        ) as mock_sync_task:
+            release.publish()
+        mock_sync_task.assert_called_once_with(release.id)
 
     def test_format_doi_url_rejects_malformed_doi(self):
         invalid_dois = [

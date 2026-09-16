@@ -569,7 +569,9 @@ class CodebaseViewSet(SpamCatcherViewSetMixin, CommonViewSetMixin, HtmlNoDeleteV
         super().perform_create(serializer)
         codebase = serializer.instance
         initial_version = self.request.query_params.get("initial_version")
-        return codebase.get_or_create_draft(initial_version=initial_version)
+        return codebase.get_or_create_draft(
+            initial_version=initial_version, submitter=self.request.user
+        )
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -1061,7 +1063,7 @@ class CodebaseReleaseDraftView(PermissionRequiredMixin, View):
     def post(self, *args, **kwargs):
         identifier = kwargs["identifier"]
         codebase = get_object_or_404(Codebase, identifier=identifier)
-        codebase_release = codebase.get_or_create_draft()
+        codebase_release = codebase.get_or_create_draft(submitter=self.request.user)
         version_number = codebase_release.version_number
         return redirect(
             "library:codebaserelease-edit",
@@ -1211,7 +1213,7 @@ class CodebaseReleaseViewSet(CommonViewSetMixin, NoDeleteViewSet):
     def create(self, request, *args, **kwargs):
         identifier = kwargs["identifier"]
         codebase = get_object_or_404(Codebase, identifier=identifier)
-        codebase_release = codebase.get_or_create_draft()
+        codebase_release = codebase.get_or_create_draft(submitter=request.user)
         codebase_release_serializer = self.get_serializer_class()
         serializer = codebase_release_serializer(codebase_release)
         headers = self.get_success_headers(serializer.data)
