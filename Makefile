@@ -32,6 +32,7 @@ COMSES_APP_ROOT ?= /srv/apps/comses
 COMSES_SHARED_ROOT ?= /srv/apps/comses/docker/shared
 COMSES_POSTGRES_ROOT ?= /srv/apps/comses/docker/pgdata
 COMSES_LOG_ROOT ?= /srv/logs/comses
+COMSES_BACKUPS_ROOT ?= /srv/backups/comses
 COMSES_SECRETS_ROOT ?= /srv/apps/comses/docker/secrets
 else
 COMSES_APP_ROOT ?= $(CURDIR)
@@ -161,6 +162,10 @@ prepare-host-storage:
 .PHONY: storage-preflight
 storage-preflight:
 	@deploy/scripts/storage-preflight
+
+.PHONY: test-storage-scripts
+test-storage-scripts:
+	deploy/scripts/tests/run-tests.sh
 
 .PHONY: verify-compose-storage
 verify-compose-storage: docker-compose.yml
