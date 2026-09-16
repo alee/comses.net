@@ -1581,7 +1581,10 @@ class Codebase(index.Indexed, ModeratedContent, ClusterableModel):
         source_release.imported_release_sync_state = None
         source_release.git_ref_sync_state = None
         source_release._state.adding = True
-        source_release.__dict__.update(**release_metadata)
+        # use setattr (not __dict__.update) so FK fields like submitter go through
+        # their descriptor and actually update the underlying _id column on save
+        for key, value in release_metadata.items():
+            setattr(source_release, key, value)
         source_release.save()
         source_release.platform_tags.add(*platform_tags)
         # many to many relationships with intermediary models need to be copied over manually
