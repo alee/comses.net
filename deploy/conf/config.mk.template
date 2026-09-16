@@ -7,6 +7,7 @@ COMSES_APP_ROOT ?= /srv/apps/comses
 COMSES_SHARED_ROOT ?= /srv/apps/comses/docker/shared
 COMSES_POSTGRES_ROOT ?= /srv/apps/comses/docker/pgdata
 COMSES_LOG_ROOT ?= /srv/logs/comses
+COMSES_BACKUPS_ROOT ?= /srv/backups/comses
 COMSES_SECRETS_ROOT ?= /srv/apps/comses/docker/secrets
 # Set only after completing and verifying docs/agents/storage-layout.md.
 COMSES_STORAGE_AUTHORITY ?= ${COMSES_STORAGE_AUTHORITY}
