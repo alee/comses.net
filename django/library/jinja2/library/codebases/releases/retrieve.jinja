@@ -11,7 +11,7 @@
 
 {% block meta_description -%}
   <meta name="description" content="{{codebase.description.raw|truncate(150)}}">
-  {% with mp=codebase.submitter.member_profile %}
+  {% with mp=release.submitter.member_profile %}
     <meta name="author" content="{{get_discourse_username(mp)}}">
     <meta name="discourse-username" content="{{get_discourse_username(mp)}}">
   {% endwith %}

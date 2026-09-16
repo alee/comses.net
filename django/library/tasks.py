@@ -180,6 +180,20 @@ def update_fs_release_metadata(release_id: int):
 
 
 @on_commit_task()
+def sync_release_submitter_to_discourse(release_id: int):
+    """
+    Ensure the release submitter's Discourse account exists/is current before the
+    Discourse embed crawler visits the published release page, so topic ownership
+    isn't misattributed to the fallback embed user. This task should be idempotent 
+    and keyed on the submitter's stable short_uuid external_id.
+    """
+    from core.discourse import sync_discourse_user
+
+    release = CodebaseRelease.objects.select_related("submitter").get(id=release_id)
+    sync_discourse_user(release.submitter)
+
+
+@on_commit_task()
 def schedule_mint_public_doi(release_id: int, dry_run: bool = False):
     """
     Mint a DOI for the given release.
