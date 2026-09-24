@@ -56,7 +56,7 @@ PATH := $(HOME)/.local/bin:$(PATH)
 .EXPORT_ALL_VARIABLES:
 
 .PHONY: build
-build: docker-compose.yml secrets $(DOCKER_SHARED_DIR)
+build: docker-compose.yml secrets $(COMPOSE_STORAGE_PREREQUISITES)
 	@docker compose build --pull --parallel $(DOCKER_BUILD_FLAGS)
 
 $(BORG_REPO_PATH):

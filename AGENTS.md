@@ -95,15 +95,10 @@ This platform manages scientific software artifacts and publication metadata. Th
 
 ## Commit conventions
 
-Use Conventional Commits: `type(scope): description`.
-
-- Choose `type` by the change's primary intent, not the files modified.
-- Prefer the most specific type; use `chore` only when none applies. `style` means formatting-only, not UI/CSS changes.
-- Use a scope only when an established repository area clearly applies; do not invent one.
-- Use an imperative, lowercase description with no trailing period, keeping the subject ≤72 characters.
-- For non-trivial commits, explain what changed and why in the body.
-- Reference issues or PRs in the body or footer when relevant
-
+- Use Conventional Commits with imperative subjects of at most 72 characters.
+- Use scopes only for established repository areas.
+- For non-trivial changes, explain the rationale in the body.
+- Reference related issues or PRs in the body or footer when known.
 
 ## Environment and Commands
 
