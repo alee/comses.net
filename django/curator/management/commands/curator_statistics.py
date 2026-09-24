@@ -41,8 +41,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--aggregations",
             "-a",
-            default="release,codebase,ip,new,reviewed,summary",
-            help="comma separated list of things to aggregate, default is release, codebase, ip, new, reviewed, users",
+            default="release,codebase,ip,new,reviewed,summary,downloads",
+            help="comma separated list of things to aggregate, default is release, codebase, ip, new, reviewed, users, downloads",
         )
 
     def export_release_download_statistics(self, downloads, dest):
@@ -115,6 +115,37 @@ class Command(BaseCommand):
             writer.writeheader()
             for result in results.iterator():
                 writer.writerow(result)
+
+    def export_all_downloads(self, downloads, dest):
+        downloads = downloads.select_related("release__codebase", "user").order_by(
+            "date_created"
+        )
+        with open(dest, "w", newline="") as f:
+            fieldnames = [
+                "date_created",
+                "url",
+                "ip_address",
+                "user",
+                "reason",
+                "affiliation",
+                "industry",
+                "referrer",
+            ]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for download in downloads.iterator():
+                writer.writerow(
+                    {
+                        "date_created": download.date_created,
+                        "url": download.release.get_absolute_url(),
+                        "ip_address": download.ip_address,
+                        "user": (download.user.username if download.user_id else ""),
+                        "reason": download.reason,
+                        "affiliation": download.affiliation,
+                        "industry": download.industry,
+                        "referrer": download.referrer,
+                    }
+                )
 
     def export_reviewed_codebases(
         self,
@@ -256,6 +287,11 @@ class Command(BaseCommand):
         if "ip" in aggregations:
             self.export_ip_download_statistics(
                 downloads, dest=os.path.join(directory, "ip_download_counts.csv")
+            )
+
+        if "downloads" in aggregations:
+            self.export_all_downloads(
+                downloads, dest=os.path.join(directory, "downloads.csv")
             )
 
         if "new" in aggregations:
