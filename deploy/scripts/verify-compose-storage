@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+
+
+def expected_mounts(environment):
+    deployed = environment in {"staging", "prod"}
+    app_root = os.environ.get(
+        "COMSES_APP_ROOT", "/srv/apps/comses" if deployed else os.getcwd()
+    )
+    shared_root = os.environ.get("COMSES_SHARED_ROOT", f"{app_root}/docker/shared")
+    postgres_root = os.environ.get("COMSES_POSTGRES_ROOT", f"{app_root}/docker/pgdata")
+    log_root = os.environ.get(
+        "COMSES_LOG_ROOT", "/srv/logs/comses" if deployed else f"{shared_root}/logs"
+    )
+    secrets_root = os.environ.get("COMSES_SECRETS_ROOT", f"{app_root}/docker/secrets")
+
+    mounts = {
+        ("db", "/var/lib/postgresql/data"): (postgres_root, False),
+        ("db", "/shared"): (shared_root, False),
+        ("db", "/shared/logs"): (log_root, False),
+        ("redis", "/data"): (f"{shared_root}/redis", False),
+        ("redis", "/usr/local/etc/redis/redis.conf"): (
+            f"{app_root}/deploy/conf/redis.conf",
+            True,
+        ),
+        ("elasticsearch", "/usr/share/elasticsearch/data"): (
+            f"{shared_root}/elasticsearch/primary",
+            False,
+        ),
+        ("server", "/shared"): (shared_root, False),
+        ("server", "/shared/logs"): (log_root, False),
+        ("server", "/etc/environment"): (f"{app_root}/.env", True),
+    }
+    if environment in {"staging", "prod"}:
+        mounts[("es02", "/usr/share/elasticsearch/data")] = (
+            f"{shared_root}/elasticsearch/secondary",
+            False,
+        )
+        mounts.update(
+            {
+                ("nginx", "/var/log/nginx"): (f"{log_root}/nginx", False),
+                ("nginx", "/srv/.well-known"): (
+                    f"{shared_root}/tls/well-known",
+                    False,
+                ),
+                ("nginx", "/srv/static"): (f"{shared_root}/static", True),
+                ("nginx", "/srv/media"): (f"{shared_root}/media", True),
+                ("nginx", "/library"): (f"{shared_root}/library", True),
+            }
+        )
+    return mounts, postgres_root, secrets_root
+
+
+def main() -> int:
+    result = subprocess.run(
+        ["docker", "compose", "config", "--format", "json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    config = json.loads(result.stdout)
+    environment = os.environ.get("DEPLOY_ENVIRONMENT", "dev")
+    expected, postgres_root, secrets_root = expected_mounts(environment)
+    errors = []
+    for (service_name, target), (expected_source, expected_read_only) in expected.items():
+        service = config.get("services", {}).get(service_name)
+        if service is None:
+            errors.append(f"missing service {service_name}")
+            continue
+        mount = next(
+            (item for item in service.get("volumes", []) if item["target"] == target),
+            None,
+        )
+        if mount is None:
+            errors.append(f"{service_name}: missing mount at {target}")
+        elif (
+            mount.get("type") != "bind"
+            or mount.get("source") != expected_source
+            or bool(mount.get("read_only")) != expected_read_only
+            or mount.get("bind", {}).get("create_host_path") is not False
+        ):
+            errors.append(
+                f"{service_name}: mount at {target} does not match the storage contract"
+            )
+    for secret_name, secret in config.get("secrets", {}).items():
+        expected_secret = f"{secrets_root}/{secret_name}"
+        if secret.get("file") != expected_secret:
+            errors.append("a Compose secret file does not match the storage contract")
+    for service_name, service in config.get("services", {}).items():
+        if service_name == "db":
+            continue
+        for mount in service.get("volumes", []):
+            if mount.get("type") != "bind":
+                continue
+            source = mount.get("source")
+            if source and os.path.commonpath((source, postgres_root)) == source:
+                errors.append("a non-database service bind mount exposes PostgreSQL data")
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+    print("Rendered Compose storage mounts match the configured environment contract.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

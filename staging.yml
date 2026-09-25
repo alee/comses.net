@@ -10,7 +10,11 @@ services:
       - discovery.seed_hosts=es02
       - cluster.initial_master_nodes=elasticsearch,es02
     volumes:
-      - esdata1:/usr/share/elasticsearch/data
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}/elasticsearch/primary
+        target: /usr/share/elasticsearch/data
+        bind:
+          create_host_path: false
   # FIXME: duplication bad
   es02:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES_VERSION}
@@ -30,8 +34,17 @@ services:
         soft: 65536
         hard: 65536
     volumes:
-      - ./deploy/elasticsearch.conf.d/log4j2.properties:/usr/share/elasticsearch/config/log4j2.properties
-      - esdata2:/usr/share/elasticsearch/data
+      - type: bind
+        source: ${COMSES_APP_ROOT:-.}/deploy/elasticsearch.conf.d/log4j2.properties
+        target: /usr/share/elasticsearch/config/log4j2.properties
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}/elasticsearch/secondary
+        target: /usr/share/elasticsearch/data
+        bind:
+          create_host_path: false
   vite:
     build:
       context: ./frontend
@@ -44,13 +57,46 @@ services:
     image: nginx:stable
     restart: always
     volumes:
-      - ./deploy/nginx/nginx-staging.conf:/etc/nginx/nginx.conf
-      - ./deploy/nginx/uwsgi_params:/etc/nginx/uwsgi_params
-      - ./deploy/nginx/well-known:/srv/.well-known
-      - ./docker/shared/logs/nginx:/var/log/nginx
-      - ./docker/shared/static:/srv/static
-      - ./docker/shared/media:/srv/media
-      - ./docker/shared/library:/library
+      - type: bind
+        source: ${COMSES_APP_ROOT:-.}/deploy/nginx/nginx-staging.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_APP_ROOT:-.}/deploy/nginx/uwsgi_params
+        target: /etc/nginx/uwsgi_params
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}/tls/well-known
+        target: /srv/.well-known
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_LOG_ROOT:-./docker/shared/logs}/nginx
+        target: /var/log/nginx
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}/static
+        target: /srv/static
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}/media
+        target: /srv/media
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${COMSES_SHARED_ROOT:-./docker/shared}/library
+        target: /library
+        read_only: true
+        bind:
+          create_host_path: false
       - sockets:/shared/sockets
     command: ["nginx", "-g", "daemon off;"]
     ports:
@@ -79,8 +125,4 @@ services:
         condition: service_healthy
 volumes:
   sockets:
-    driver: local
-  esdata1:
-    driver: local
-  esdata2:
     driver: local

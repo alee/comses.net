@@ -1362,7 +1362,7 @@ class Codebase(index.Indexed, ModeratedContent, ClusterableModel):
         """
         if not self.pk:
             return Contributor.objects.none()
-        return Contributor.objects.filter(
+        return Contributor.objects.select_related("user__member_profile").filter(
             id__in=release_contributors.for_codebase(self).values("contributor_id")
         )
 
@@ -1531,20 +1531,22 @@ class Codebase(index.Indexed, ModeratedContent, ClusterableModel):
             return image_metadata
 
     @transaction.atomic
-    def get_or_create_draft(self, initial_version: str | None = None):
+    def get_or_create_draft(self, initial_version: str | None = None, submitter=None):
         existing_draft = self.releases.filter(
             status=CodebaseRelease.Status.DRAFT
         ).first()
         if existing_draft:
             return existing_draft
 
+        overrides = {}
+        if submitter is not None:
+            overrides["submitter"] = submitter
         # allow for overriding the version number of the initial draft
         # this is currently used to create a less conflict-prone 0.0.1 draft when
         # someone wants to import all their work with the github integration
         if initial_version:
-            draft_release = self.create_release(version_number=initial_version)
-        else:
-            draft_release = self.create_release()
+            overrides["version_number"] = initial_version
+        draft_release = self.create_release(**overrides)
         # reset fields that should not be copied over to a new draft
         # NOTE: input_data_url and output_data_url intentionally carry forward
         # (see docs/source/metadata_schema.md, "Draft inheritance")
@@ -1579,7 +1581,10 @@ class Codebase(index.Indexed, ModeratedContent, ClusterableModel):
         source_release.imported_release_sync_state = None
         source_release.git_ref_sync_state = None
         source_release._state.adding = True
-        source_release.__dict__.update(**release_metadata)
+        # use setattr (not __dict__.update) so FK fields like submitter go through
+        # their descriptor and actually update the underlying _id column on save
+        for key, value in release_metadata.items():
+            setattr(source_release, key, value)
         source_release.save()
         source_release.platform_tags.add(*platform_tags)
         # many to many relationships with intermediary models need to be copied over manually
@@ -1614,13 +1619,14 @@ class Codebase(index.Indexed, ModeratedContent, ClusterableModel):
             doi=None,
             peer_reviewed=False,
         )
+        # applied regardless of branch so a submitter override isn't lost for non-initial releases
+        release_metadata.update(overrides)
 
         if source_release is None:  # this is the first release of the codebase
             release_metadata["codebase"] = self
-            release_metadata.update(overrides)
             release = CodebaseRelease.objects.create(**release_metadata)
             # add submitter as a release contributor automatically
-            contributor, created = Contributor.from_user(self.submitter)
+            contributor, created = Contributor.from_user(release.submitter)
             release.add_contributor(contributor)
         else:
             # copy source release metadata (previous or specified source)
@@ -2450,6 +2456,9 @@ class CodebaseRelease(index.Indexed, ClusterableModel):
     def publish(self):
         self.validate_publishable()
         self._publish()
+        from .tasks import sync_release_submitter_to_discourse
+
+        sync_release_submitter_to_discourse(self.id)
         if self.peer_reviewed:
             # if this release is peer reviewed schedule a DOI minting
             from .tasks import schedule_mint_public_doi

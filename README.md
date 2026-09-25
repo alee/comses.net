@@ -82,9 +82,9 @@ For M1/M2 chipsets you must have `export DOCKER_DEFAULT_PLATFORM=linux/amd64` se
 Building and installing from a fresh clone of the repository can be done by:
 
 1. `$ make build`
-2. Edit the generated `config.mk` file and set `BORG_REPO_URL` to the URL of a borg backup with preserved comses.net
-   gateway content (WIP)
-3. `$ make restore`
+2. Edit the generated `config.mk` and set `BORG_REPO_URL` to a packaged Borg
+   repository (`repo.tar.xz`), or place that bundle at `build/repo.tar.xz`.
+3. `$ make restore` (see `docs/agents/backup-restore-runbook.md` before replacing existing state)
 
 ### Debugging
 

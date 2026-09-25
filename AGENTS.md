@@ -89,20 +89,16 @@ This platform manages scientific software artifacts and publication metadata. Th
 - Use repository-standard containerized commands for running tests and tooling
 - For targeted Django tests, run exactly: `make test TEST_ARGS=<dotted.test.path>`
 - `make test` destroys and reinitializes the database from scratch on every run (via `deploy/test.sh`); never run it against a database whose state needs to be preserved
+- Known test-scaffolding gotcha: Django tests currently generate the next numbered `library` migration, typically altering storage-backed file fields. This is an expected, environment-specific artifact; do not commit it or treat its appearance as production migration drift or database corruption without independent evidence. Remove the generated migration after the test run if it remains in the worktree.
 - If `make test` fails in WSL with Docker daemon or credential-helper errors, prompt the user to start Docker Desktop for Windows and confirm before retrying
 - Do not change existing behavior without updating or adding tests
 
 ## Commit conventions
 
-Use Conventional Commits: `type(scope): description`.
-
-- Choose `type` by the change's primary intent, not the files modified.
-- Prefer the most specific type; use `chore` only when none applies. `style` means formatting-only, not UI/CSS changes.
-- Use a scope only when an established repository area clearly applies; do not invent one.
-- Use an imperative, lowercase description with no trailing period, keeping the subject ≤72 characters.
-- For non-trivial commits, explain what changed and why in the body.
-- Reference issues or PRs in the body or footer when relevant
-
+- Use Conventional Commits with imperative subjects of at most 72 characters.
+- Use scopes only for established repository areas.
+- For non-trivial changes, explain the rationale in the body.
+- Reference related issues or PRs in the body or footer when known.
 
 ## Environment and Commands
 

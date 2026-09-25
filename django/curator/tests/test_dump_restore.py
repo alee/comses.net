@@ -2,10 +2,10 @@ import logging
 import os
 import shlex
 import subprocess
-from unittest import TestCase
 
 from django.conf import settings
 from django.db import connections
+from django.test import TransactionTestCase
 from invoke import Context
 
 from core.models import Event, Job
@@ -34,7 +34,9 @@ def setUpModule():
     initialize_test_shared_folders()
 
 
-class DumpRestoreTestCase(TestCase):
+class DumpRestoreTestCase(TransactionTestCase):
+    databases = {"default", "dump_restore"}
+
     def setUp(self):
         user_factory = UserFactory()
         self.user = user_factory.create()
@@ -57,7 +59,9 @@ class DumpRestoreTestCase(TestCase):
 
         os.makedirs(os.path.join(settings.BACKUP_ROOT, "latest"), exist_ok=True)
         self.database_dump_path = os.path.join(
-            settings.BACKUP_ROOT, "latest", "comsesnet_latest.sql"
+            settings.BACKUP_ROOT,
+            "latest",
+            f"{connections['default'].settings_dict['NAME']}.dump",
         )
 
     def test_dump_and_restore(self):
@@ -66,8 +70,9 @@ class DumpRestoreTestCase(TestCase):
         create_pgpass_file(ctx)
         dump_result = subprocess.run(
             shlex.split(
-                "pg_dump -h {HOST} -d {NAME} -U {USER} -f {dest}".format(
-                    **settings.DATABASES["default"], dest=self.database_dump_path
+                "pg_dump --format=custom -h {HOST} -d {NAME} -U {USER} -f {dest}".format(
+                    **connections["default"].settings_dict,
+                    dest=self.database_dump_path,
                 )
             ),
             stderr=subprocess.PIPE,

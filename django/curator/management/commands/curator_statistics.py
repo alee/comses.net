@@ -1,12 +1,15 @@
 import csv
+import hashlib
+import hmac
 import logging
 import os
 from datetime import date
 
 import pytz
 from dateutil.parser import parse as parse_date
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Count, Max
 
 from core.models import MemberProfile, Job, Event
@@ -41,8 +44,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--aggregations",
             "-a",
-            default="release,codebase,ip,new,reviewed,summary",
-            help="comma separated list of things to aggregate, default is release, codebase, ip, new, reviewed, users",
+            default="release,codebase,ip,new,reviewed,summary,downloads",
+            help="comma separated list of things to aggregate, default is release, codebase, ip, new, reviewed, users, downloads",
         )
 
     def export_release_download_statistics(self, downloads, dest):
@@ -115,6 +118,53 @@ class Command(BaseCommand):
             writer.writeheader()
             for result in results.iterator():
                 writer.writerow(result)
+
+    def export_all_downloads(self, downloads, dest):
+        key_error = "DOWNLOAD_ANALYTICS_HMAC_KEY must be 32 random bytes in hex"
+        try:
+            key = bytes.fromhex(settings.DOWNLOAD_ANALYTICS_HMAC_KEY or "")
+        except ValueError as exc:
+            raise CommandError(key_error) from exc
+        if len(key) != 32:
+            raise CommandError(key_error)
+
+        downloads = downloads.select_related("release__codebase").order_by(
+            "date_created"
+        )
+        with open(dest, "w", newline="") as f:
+            fieldnames = [
+                "date_created",
+                "url",
+                "user_token",
+                "reason",
+                "affiliation",
+                "industry",
+                "referrer",
+            ]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for download in downloads.iterator():
+                writer.writerow(
+                    {
+                        "date_created": download.date_created,
+                        "url": download.release.get_absolute_url(),
+                        "user_token": (
+                            hmac.new(
+                                key,
+                                (
+                                    f"comses:download:user:v1:{download.user_id}"
+                                ).encode("ascii"),
+                                hashlib.sha256,
+                            ).hexdigest()
+                            if download.user_id is not None
+                            else ""
+                        ),
+                        "reason": download.reason,
+                        "affiliation": download.affiliation,
+                        "industry": download.industry,
+                        "referrer": download.referrer,
+                    }
+                )
 
     def export_reviewed_codebases(
         self,
@@ -256,6 +306,11 @@ class Command(BaseCommand):
         if "ip" in aggregations:
             self.export_ip_download_statistics(
                 downloads, dest=os.path.join(directory, "ip_download_counts.csv")
+            )
+
+        if "downloads" in aggregations:
+            self.export_all_downloads(
+                downloads, dest=os.path.join(directory, "downloads.csv")
             )
 
         if "new" in aggregations:

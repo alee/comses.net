@@ -1,4 +1,16 @@
 # dev|staging|test|prod
 DEPLOY_ENVIRONMENT=${DEPLOY_ENVIRONMENT}
+# Deployed hosts use the canonical /srv contract. Development and tests keep
+# repository-local defaults so an ordinary checkout does not require /srv.
+ifneq ($(filter staging prod,$(DEPLOY_ENVIRONMENT)),)
+COMSES_APP_ROOT ?= /srv/apps/comses
+COMSES_SHARED_ROOT ?= /srv/apps/comses/docker/shared
+COMSES_POSTGRES_ROOT ?= /srv/apps/comses/docker/pgdata
+COMSES_LOG_ROOT ?= /srv/logs/comses
+COMSES_BACKUPS_ROOT ?= /srv/backups/comses
+COMSES_SECRETS_ROOT ?= /srv/apps/comses/docker/secrets
+# Set only after completing and verifying docs/agents/storage-layout.md.
+COMSES_STORAGE_AUTHORITY ?= ${COMSES_STORAGE_AUTHORITY}
+endif
 # replace with url to actual sparse / anonymized repo
 BORG_REPO_URL=https://dev.commons.asu.edu/data/comses/minimal/repo.tar.xz

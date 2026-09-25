@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Infrastructure may override these IDs to match the pinned container images.
+DEPLOY_UID=${DEPLOY_UID:-1000}
+DEPLOY_GID=${DEPLOY_GID:-1000}
+APP_UID=${APP_UID:-0}
+APP_GID=${APP_GID:-0}
+POSTGRES_UID=${POSTGRES_UID:-999}
+POSTGRES_GID=${POSTGRES_GID:-999}
+REDIS_UID=${REDIS_UID:-999}
+REDIS_GID=${REDIS_GID:-1000}
+ELASTICSEARCH_UID=${ELASTICSEARCH_UID:-1000}
+ELASTICSEARCH_GID=${ELASTICSEARCH_GID:-0}
+NGINX_UID=${NGINX_UID:-101}
+NGINX_GID=${NGINX_GID:-101}
+
+APP_ROOT=${COMSES_APP_ROOT:-/srv/apps/comses}
+SHARED_ROOT=${COMSES_SHARED_ROOT:-/srv/apps/comses/docker/shared}
+POSTGRES_ROOT=${COMSES_POSTGRES_ROOT:-/srv/apps/comses/docker/pgdata}
+LOG_ROOT=${COMSES_LOG_ROOT:-/srv/logs/comses}
+BACKUPS_ROOT=${COMSES_BACKUPS_ROOT:-/srv/backups/comses}
+SECRETS_ROOT=${COMSES_SECRETS_ROOT:-/srv/apps/comses/docker/secrets}
+
+# Pinned host paths. Overridable so storage tests can exercise this script
+# against a disposable fixture tree instead of the real /srv layout.
+EXPECTED_APP_ROOT=${COMSES_EXPECTED_APP_ROOT:-/srv/apps/comses}
+EXPECTED_SHARED_ROOT=${COMSES_EXPECTED_SHARED_ROOT:-$EXPECTED_APP_ROOT/docker/shared}
+EXPECTED_POSTGRES_ROOT=${COMSES_EXPECTED_POSTGRES_ROOT:-$EXPECTED_APP_ROOT/docker/pgdata}
+EXPECTED_LOG_ROOT=${COMSES_EXPECTED_LOG_ROOT:-/srv/logs/comses}
+EXPECTED_BACKUPS_ROOT=${COMSES_EXPECTED_BACKUPS_ROOT:-/srv/backups/comses}
+EXPECTED_SECRETS_ROOT=${COMSES_EXPECTED_SECRETS_ROOT:-$EXPECTED_APP_ROOT/docker/secrets}
+
+die() {
+    echo "prepare-host-storage: $*" >&2
+    exit 1
+}
+
+contains_data() {
+    local path=$1
+    [ -d "$path" ] && find -P "$path" -mindepth 1 -print -quit | grep -q .
+}
+
+# install -d only guarantees owner/mode for a directory it creates; it does
+# not reliably reset special bits (e.g. a stale setgid bit) on a directory
+# that already exists, and even a follow-up "chmod 0755" silently preserves
+# an existing setgid bit on a directory (GNU chmod requires an explicit
+# leading zero, e.g. "00755", to force-clear special bits there). Use that
+# explicit form so exact-mode private paths always end up at precisely the
+# requested owner and mode.
+ensure_exact_dir() {
+    local path=$1 uid=$2 gid=$3 mode=$4
+    install -d -m "$mode" "$path"
+    chown "$uid:$gid" "$path"
+    chmod "0$mode" "$path"
+}
+
+[ "$(id -u)" -eq 0 ] || die "run as root (normally from infrastructure automation)"
+[ "$APP_ROOT" = "$EXPECTED_APP_ROOT" ] || die "deployed APP_ROOT must be $EXPECTED_APP_ROOT"
+[ "$SHARED_ROOT" = "$EXPECTED_SHARED_ROOT" ] || die "deployed SHARED_ROOT must be $EXPECTED_SHARED_ROOT"
+[ "$POSTGRES_ROOT" = "$EXPECTED_POSTGRES_ROOT" ] || die "deployed POSTGRES_ROOT must be $EXPECTED_POSTGRES_ROOT"
+[ "$LOG_ROOT" = "$EXPECTED_LOG_ROOT" ] || die "deployed LOG_ROOT must be $EXPECTED_LOG_ROOT"
+[ "$BACKUPS_ROOT" = "$EXPECTED_BACKUPS_ROOT" ] || die "deployed BACKUPS_ROOT must be $EXPECTED_BACKUPS_ROOT"
+[ "$SECRETS_ROOT" = "$EXPECTED_SECRETS_ROOT" ] || die "deployed SECRETS_ROOT must be $EXPECTED_SECRETS_ROOT"
+[ -d "$APP_ROOT" ] || die "$APP_ROOT must already contain the application checkout"
+[ ! -L "$APP_ROOT" ] || die "$APP_ROOT must not be a symlink"
+[ "$(realpath -e "$APP_ROOT")" = "$APP_ROOT" ] || die "$APP_ROOT resolves through a symlink"
+SRV_ROOT=${COMSES_SRV_ROOT:-/srv}
+mount_target=$(findmnt -n -o TARGET --mountpoint "$SRV_ROOT") || die "$SRV_ROOT is not mounted; infrastructure must mount it before storage preparation"
+[ "$mount_target" = "$SRV_ROOT" ] || die "$SRV_ROOT is not an exact mountpoint"
+mount_target=$(findmnt -n -o TARGET -T "$APP_ROOT") || die "cannot identify the filesystem containing $APP_ROOT"
+[ "$mount_target" != / ] || die "$APP_ROOT is on the root filesystem; mount provisioned /srv storage first"
+if [ -e "$LOG_ROOT" ] || [ -e "$BACKUPS_ROOT" ]; then
+    for path in "$LOG_ROOT" "$BACKUPS_ROOT"; do
+        [ ! -e "$path" ] || [ ! -L "$path" ] || die "refusing to operate near infrastructure-owned symlink $path"
+    done
+fi
+if contains_data "$SHARED_ROOT/postgres"; then
+    die "$SHARED_ROOT/postgres contains PostgreSQL data and would be exposed to the server container; reconcile it with $POSTGRES_ROOT according to docs/agents/postgresql-upgrade-runbook.md"
+fi
+if contains_data "$APP_ROOT/build/secrets" && contains_data "$SECRETS_ROOT" && [ "${COMSES_STORAGE_AUTHORITY:-}" != new ]; then
+    die "both legacy build/secrets and docker/secrets contain secret material; compare them and select the authority according to docs/agents/storage-layout.md"
+fi
+
+for path in "$SHARED_ROOT" "$POSTGRES_ROOT" "$LOG_ROOT" "$SECRETS_ROOT"; do
+    [ ! -L "$path" ] || die "refusing to operate on symlink $path"
+    [ "$(realpath -m "$path")" = "$path" ] || die "refusing path that resolves through a symlink: $path"
+done
+for path in \
+    "$SHARED_ROOT/.latest" \
+    "$SHARED_ROOT/backups" \
+    "$SHARED_ROOT/backups/repo" \
+    "$SHARED_ROOT/data" \
+    "$SHARED_ROOT/elasticsearch" \
+    "$SHARED_ROOT/elasticsearch/primary" \
+    "$SHARED_ROOT/elasticsearch/secondary" \
+    "$SHARED_ROOT/extract" \
+    "$SHARED_ROOT/incoming" \
+    "$SHARED_ROOT/library" \
+    "$SHARED_ROOT/media" \
+    "$SHARED_ROOT/redis" \
+    "$SHARED_ROOT/repository" \
+    "$SHARED_ROOT/static" \
+    "$SHARED_ROOT/statistics" \
+    "$SHARED_ROOT/tests" \
+    "$SHARED_ROOT/tls" \
+    "$SHARED_ROOT/tls/well-known" \
+    "$SHARED_ROOT/uploads" \
+    "$SHARED_ROOT/vite" \
+    "$LOG_ROOT/nginx"; do
+    [ ! -L "$path" ] || die "refusing to operate on managed symlink $path"
+done
+
+# ensure_exact_dir only touches each named directory; it never recursively
+# changes ownership across the checkout or a durable tree.
+ensure_exact_dir "$SHARED_ROOT" "$APP_UID" "$APP_GID" 0755
+for path in .latest data extract incoming library media repository static statistics tests tls tls/well-known uploads vite; do
+    ensure_exact_dir "$SHARED_ROOT/$path" "$APP_UID" "$APP_GID" 0755
+done
+# $SHARED_ROOT/backups and $LOG_ROOT are infrastructure-owned collaborative
+# bind roots (debian:operators 2775); create them only if missing and never
+# chown/chmod them here. See docs/agents/storage-layout.md.
+mkdir -p "$SHARED_ROOT/backups" "$LOG_ROOT"
+mkdir -p "$SHARED_ROOT/backups/repo"
+ensure_exact_dir "$POSTGRES_ROOT" "$POSTGRES_UID" "$POSTGRES_GID" 0700
+ensure_exact_dir "$SHARED_ROOT/redis" "$REDIS_UID" "$REDIS_GID" 0750
+ensure_exact_dir "$SHARED_ROOT/elasticsearch" "$ELASTICSEARCH_UID" "$ELASTICSEARCH_GID" 0750
+ensure_exact_dir "$SHARED_ROOT/elasticsearch/primary" "$ELASTICSEARCH_UID" "$ELASTICSEARCH_GID" 0750
+ensure_exact_dir "$SHARED_ROOT/elasticsearch/secondary" "$ELASTICSEARCH_UID" "$ELASTICSEARCH_GID" 0750
+ensure_exact_dir "$LOG_ROOT/nginx" "$NGINX_UID" "$NGINX_GID" 0750
+ensure_exact_dir "$SECRETS_ROOT" "$DEPLOY_UID" "$DEPLOY_GID" 0700
+while IFS= read -r -d '' secret_file; do
+    chown "$DEPLOY_UID:$DEPLOY_GID" "$secret_file"
+    chmod 0600 "$secret_file"
+done < <(find -P "$SECRETS_ROOT" -mindepth 1 -maxdepth 1 -type f -print0)
+if [ -f "$APP_ROOT/.env" ]; then
+    chown "$DEPLOY_UID:$DEPLOY_GID" "$APP_ROOT/.env"
+    chmod 0600 "$APP_ROOT/.env"
+fi
+
+echo "Prepared CoMSES writable paths without recursively changing ownership."
