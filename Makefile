@@ -40,7 +40,7 @@ COMSES_APP_ROOT ?= $(CURDIR)
 COMSES_SHARED_ROOT ?= $(COMSES_APP_ROOT)/docker/shared
 COMSES_POSTGRES_ROOT ?= $(COMSES_APP_ROOT)/docker/pgdata
 COMSES_LOG_ROOT ?= $(COMSES_SHARED_ROOT)/logs
-COMSES_SECRETS_ROOT ?= $(COMSES_APP_ROOT)/build/secrets
+COMSES_SECRETS_ROOT ?= $(COMSES_APP_ROOT)/docker/secrets
 endif
 
 # Deployed hosts are provisioned explicitly; local and CI Compose bind mounts

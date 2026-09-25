@@ -104,11 +104,11 @@ This is an explicit exception to private file modes for this operator export.
 Revisit the exception before giving other users or services access to the host
 or shared tree.
 
-On deployed hosts, `make secrets` creates
-`/srv/apps/comses/docker/secrets/download_analytics_hmac_key` once; development
-uses `build/secrets/`. Keep this separate 32-byte key private and preserve it
-across rebuilds and restores: replacing it changes future user tokens and
-breaks cross-export joins. A missing or malformed key causes the export to fail.
+`make secrets` creates `docker/secrets/download_analytics_hmac_key` once,
+under the configured application root in every environment. Keep this separate
+32-byte key private and preserve it across rebuilds and restores: replacing it
+changes future user tokens and breaks cross-export joins. A missing or malformed
+key causes the export to fail.
 
 ## Infrastructure preparation
 

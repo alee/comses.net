@@ -15,7 +15,7 @@ def expected_mounts(environment):
     log_root = os.environ.get(
         "COMSES_LOG_ROOT", "/srv/logs/comses" if deployed else f"{shared_root}/logs"
     )
-    secrets_root = os.environ.get("COMSES_SECRETS_ROOT", f"{app_root}/build/secrets")
+    secrets_root = os.environ.get("COMSES_SECRETS_ROOT", f"{app_root}/docker/secrets")
 
     mounts = {
         ("db", "/var/lib/postgresql/data"): (postgres_root, False),

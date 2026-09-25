@@ -13,7 +13,7 @@ services:
       - db_password # re-using the same db password
     volumes:
       - type: bind
-        source: ${COMSES_SECRETS_ROOT:-./build/secrets}/db_password
+        source: ${COMSES_SECRETS_ROOT:-./docker/secrets}/db_password
         target: /run/secrets/db_password
         read_only: true
         bind:

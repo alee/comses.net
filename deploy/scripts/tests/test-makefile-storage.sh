@@ -32,4 +32,19 @@ for environment in staging prod dev; do
     fi
 done
 
+# The repository-local default must reuse persistent secrets under docker/.
+output=$(make -n -C "$FIXTURE" build \
+    "DEPLOY_ENVIRONMENT=dev" \
+    "COMSES_APP_ROOT=$FIXTURE" \
+    "COMSES_SHARED_ROOT=$FIXTURE/docker/shared" \
+    "COMSES_POSTGRES_ROOT=$FIXTURE/docker/pgdata")
+[[ "$output" == *"$FIXTURE/docker/secrets/download_analytics_hmac_key"* ]] || {
+    echo "development build did not use docker/secrets by default" >&2
+    exit 1
+}
+[[ "$output" != *"$FIXTURE/build/secrets"* ]] || {
+    echo "development build would recreate build/secrets" >&2
+    exit 1
+}
+
 echo "Build storage prerequisites are environment-specific."

@@ -145,30 +145,30 @@ services:
 
 secrets:
   datacite_api_password:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/datacite_api_password
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/datacite_api_password
   db_password:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/db_password
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/db_password
   discourse_api_key:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/discourse_api_key
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/discourse_api_key
   discourse_sso_secret:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/discourse_sso_secret
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/discourse_sso_secret
   django_secret_key:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/django_secret_key
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/django_secret_key
   download_analytics_hmac_key:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/download_analytics_hmac_key
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/download_analytics_hmac_key
   github_client_secret:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/github_client_secret
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/github_client_secret
   github_integration_app_private_key:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/github_integration_app_private_key
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/github_integration_app_private_key
   github_integration_app_webhook_secret:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/github_integration_app_webhook_secret
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/github_integration_app_webhook_secret
   hcaptcha_secret:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/hcaptcha_secret
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/hcaptcha_secret
   librarian_sso_secret:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/librarian_sso_secret
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/librarian_sso_secret
   mail_api_key:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/mail_api_key
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/mail_api_key
   orcid_client_secret:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/orcid_client_secret
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/orcid_client_secret
   youtube_api_key:
-    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/youtube_api_key
+    file: ${COMSES_SECRETS_ROOT:-./docker/secrets}/youtube_api_key
