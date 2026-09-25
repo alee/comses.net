@@ -99,6 +99,7 @@ services:
       - discourse_api_key
       - discourse_sso_secret
       - django_secret_key
+      - download_analytics_hmac_key
       - github_client_secret
       - orcid_client_secret
       - github_integration_app_private_key
@@ -153,6 +154,8 @@ secrets:
     file: ${COMSES_SECRETS_ROOT:-./build/secrets}/discourse_sso_secret
   django_secret_key:
     file: ${COMSES_SECRETS_ROOT:-./build/secrets}/django_secret_key
+  download_analytics_hmac_key:
+    file: ${COMSES_SECRETS_ROOT:-./build/secrets}/download_analytics_hmac_key
   github_client_secret:
     file: ${COMSES_SECRETS_ROOT:-./build/secrets}/github_client_secret
   github_integration_app_private_key:

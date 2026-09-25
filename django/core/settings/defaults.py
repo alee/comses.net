@@ -298,6 +298,11 @@ PEER_REVIEW_INVITATION_EXPIRATION = 21
 # sentry DSN
 SENTRY_DSN = os.getenv("SENTRY_DSN", "https://sentry.example.com/2")
 SECRET_KEY = read_secret("django_secret_key", os.getenv("SECRET_KEY"))
+# Separate from SECRET_KEY so Django signing-key rotation does not change
+# stable download-analysis pseudonyms.
+DOWNLOAD_ANALYTICS_HMAC_KEY = read_secret(
+    "download_analytics_hmac_key", os.getenv("DOWNLOAD_ANALYTICS_HMAC_KEY")
+)
 
 # regular settings
 

@@ -95,12 +95,20 @@ unsafe path layout; they do not claim to identify the underlying Cinder volume.
 ### Accepted export access exception
 
 `curator_statistics` writes per-download rows to `/shared/statistics/downloads.csv`
-by default. Rows include IP addresses and a stable `user_id` for aggregation;
-they do not include usernames. The existing `0755` statistics directory and
-normal file creation mode are accepted for staging and production because these
-hosts have no local users beyond trusted operators. This is an explicit
-exception to private file modes for this operator export. Revisit the exception
-before giving other users or services access to the host or shared tree.
+by default. It replaces authenticated users' database IDs with stable HMAC-SHA-256
+`user_token` values and omits full IP addresses. The remaining timestamps,
+affiliations, and referrers can still make rows linkable. The existing `0755`
+statistics directory and normal file creation mode are accepted for staging
+and production because these hosts have no local users beyond trusted operators.
+This is an explicit exception to private file modes for this operator export.
+Revisit the exception before giving other users or services access to the host
+or shared tree.
+
+On deployed hosts, `make secrets` creates
+`/srv/apps/comses/docker/secrets/download_analytics_hmac_key` once; development
+uses `build/secrets/`. Keep this separate 32-byte key private and preserve it
+across rebuilds and restores: replacing it changes future user tokens and
+breaks cross-export joins. A missing or malformed key causes the export to fail.
 
 ## Infrastructure preparation
 

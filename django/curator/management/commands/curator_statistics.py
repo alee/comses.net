@@ -1,12 +1,15 @@
 import csv
+import hashlib
+import hmac
 import logging
 import os
 from datetime import date
 
 import pytz
 from dateutil.parser import parse as parse_date
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Count, Max
 
 from core.models import MemberProfile, Job, Event
@@ -117,6 +120,14 @@ class Command(BaseCommand):
                 writer.writerow(result)
 
     def export_all_downloads(self, downloads, dest):
+        key_error = "DOWNLOAD_ANALYTICS_HMAC_KEY must be 32 random bytes in hex"
+        try:
+            key = bytes.fromhex(settings.DOWNLOAD_ANALYTICS_HMAC_KEY or "")
+        except ValueError as exc:
+            raise CommandError(key_error) from exc
+        if len(key) != 32:
+            raise CommandError(key_error)
+
         downloads = downloads.select_related("release__codebase").order_by(
             "date_created"
         )
@@ -124,8 +135,7 @@ class Command(BaseCommand):
             fieldnames = [
                 "date_created",
                 "url",
-                "ip_address",
-                "user_id",
+                "user_token",
                 "reason",
                 "affiliation",
                 "industry",
@@ -138,8 +148,17 @@ class Command(BaseCommand):
                     {
                         "date_created": download.date_created,
                         "url": download.release.get_absolute_url(),
-                        "ip_address": download.ip_address,
-                        "user_id": download.user_id or "",
+                        "user_token": (
+                            hmac.new(
+                                key,
+                                (
+                                    f"comses:download:user:v1:{download.user_id}"
+                                ).encode("ascii"),
+                                hashlib.sha256,
+                            ).hexdigest()
+                            if download.user_id is not None
+                            else ""
+                        ),
                         "reason": download.reason,
                         "affiliation": download.affiliation,
                         "industry": download.industry,

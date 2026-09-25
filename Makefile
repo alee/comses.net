@@ -11,8 +11,9 @@ SECRETS_DIR=${COMSES_SECRETS_ROOT}
 DB_PASSWORD_PATH=${SECRETS_DIR}/db_password
 PGPASS_PATH=${SECRETS_DIR}/.pgpass
 SECRET_KEY_PATH=${SECRETS_DIR}/django_secret_key
+DOWNLOAD_ANALYTICS_HMAC_KEY_PATH=${SECRETS_DIR}/download_analytics_hmac_key
 EXT_SECRETS=hcaptcha_secret github_client_secret orcid_client_secret discourse_api_key discourse_sso_secret librarian_sso_secret mail_api_key datacite_api_password youtube_api_key github_integration_app_private_key github_integration_app_webhook_secret
-GENERATED_SECRETS=$(DB_PASSWORD_PATH) $(PGPASS_PATH) $(SECRET_KEY_PATH)
+GENERATED_SECRETS=$(DB_PASSWORD_PATH) $(PGPASS_PATH) $(SECRET_KEY_PATH) $(DOWNLOAD_ANALYTICS_HMAC_KEY_PATH)
 
 ENVREPLACE := deploy/scripts/envreplace
 DEPLOY_CONF_DIR=deploy/conf
@@ -94,6 +95,11 @@ $(SECRET_KEY_PATH): | ${SECRETS_DIR}
 	echo "$${SECRET_KEY}" > $(SECRET_KEY_PATH); \
 	chmod 0600 $(SECRET_KEY_PATH)
 
+$(DOWNLOAD_ANALYTICS_HMAC_KEY_PATH): | ${SECRETS_DIR}
+	@umask 077; tmp=$$(mktemp "${SECRETS_DIR}/.download_analytics_hmac_key.XXXXXX"); \
+	trap 'rm -f "$$tmp"' EXIT; \
+	openssl rand -hex 32 > "$$tmp" && mv "$$tmp" "$@"
+
 $(DB_PASSWORD_PATH): | ${SECRETS_DIR}
 	@DB_PASSWORD=$$(openssl rand -base64 48); \
 	TODAY=$$(date +%Y-%m-%d-%H:%M:%S); \
@@ -125,7 +131,7 @@ release-version: .env
 
 .PHONY: docker-compose.yml
 docker-compose.yml: base.yml dev.yml staging.yml test.yml prod.yml config.mk \
-	$(PGPASS_PATH) release-version .env $(COMPOSE_STORAGE_PREREQUISITES)
+	$(PGPASS_PATH) $(DOWNLOAD_ANALYTICS_HMAC_KEY_PATH) release-version .env $(COMPOSE_STORAGE_PREREQUISITES)
 	@case "$(DEPLOY_ENVIRONMENT)" in \
 	  dev|staging|test) docker compose -f base.yml -f $(DEPLOY_ENVIRONMENT).yml config > docker-compose.yml;; \
 	  prod) docker compose -f base.yml -f staging.yml -f $(DEPLOY_ENVIRONMENT).yml config > docker-compose.yml;; \
