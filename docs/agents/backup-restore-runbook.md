@@ -109,9 +109,11 @@ docker compose run --rm --no-deps server inv borg.restore \
 docker compose up -d server
 ```
 
-The restore verifies and extracts the archive, replaces and migrates the
-database, and only then rotates live shared files. Previous live file trees are
-preserved under `/shared/.latest` during rotation.
+The restore holds the same `.backup.lock` as backup and prune while it
+verifies and extracts the archive, replaces and migrates the database, and
+rotates live shared files. Database-only and files-only restores use the same
+lock. Previous live file trees are preserved under `/shared/.latest` during
+rotation.
 
 If database restore or migration fails, shared files have not yet been rotated.
 Leave the application stopped, retain the logs and extracted archive, and

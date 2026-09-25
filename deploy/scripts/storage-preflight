@@ -29,6 +29,7 @@ EXPECTED_POSTGRES_ROOT=${COMSES_EXPECTED_POSTGRES_ROOT:-$EXPECTED_APP_ROOT/docke
 EXPECTED_LOG_ROOT=${COMSES_EXPECTED_LOG_ROOT:-/srv/logs/comses}
 EXPECTED_BACKUPS_ROOT=${COMSES_EXPECTED_BACKUPS_ROOT:-/srv/backups/comses}
 EXPECTED_SECRETS_ROOT=${COMSES_EXPECTED_SECRETS_ROOT:-$EXPECTED_APP_ROOT/docker/secrets}
+SRV_ROOT=${COMSES_SRV_ROOT:-/srv}
 
 # Infrastructure collaborative group for the canonical logs/backups bind
 # roots (typically "operators"); resolved lazily so a missing group on a
@@ -65,10 +66,16 @@ require_not_symlinked() {
     [ "$(realpath -e "$path")" = "$path" ] || die "deployed path resolves through a symlink: $path"
 }
 
-require_cinder_backed() {
+require_provisioned_mount() {
+    local mount_target
+    mount_target=$(findmnt -n -o TARGET --mountpoint "$SRV_ROOT") || die "$SRV_ROOT is not mounted; infrastructure must mount it before deployment"
+    [ "$mount_target" = "$SRV_ROOT" ] || die "$SRV_ROOT is not an exact mountpoint"
+}
+
+require_non_root_storage() {
     local path=$1 mount_target
     mount_target=$(findmnt -n -o TARGET -T "$path") || die "cannot identify the filesystem containing $path"
-    [ "$mount_target" != / ] || die "$path is on the root filesystem, not Cinder-backed /srv storage"
+    [ "$mount_target" != / ] || die "$path is on the root filesystem, not provisioned /srv storage"
 }
 
 # Confirms a bind-mounted collaborative path (e.g. /srv/logs/comses) and its
@@ -93,7 +100,7 @@ validate_collaborative_root() {
     local path=$1 mode perm group_perm other_perm gid probe
     require_not_symlinked "$path"
     [ -d "$path" ] || die "$path must be a directory"
-    require_cinder_backed "$path"
+    require_non_root_storage "$path"
 
     mode=$(stat -c '%a' "$path")
     perm=${mode: -3}
@@ -158,7 +165,8 @@ if [[ "$DEPLOY_ENVIRONMENT" == staging || "$DEPLOY_ENVIRONMENT" == prod ]]; then
         [ ! -L "$path" ] || die "managed directory must not be a symlink: $path"
         [ "$(realpath -e "$path")" = "$path" ] || die "managed directory resolves through a symlink: $path"
     done
-    require_cinder_backed "$APP_ROOT"
+    require_provisioned_mount
+    require_non_root_storage "$APP_ROOT"
     if [ -d "$APP_ROOT/build/secrets" ] && [ "${COMSES_STORAGE_AUTHORITY:-}" != new ]; then
         die "legacy build/secrets still exists; verify the in-place secret copy and set COMSES_STORAGE_AUTHORITY=new before deployment"
     fi

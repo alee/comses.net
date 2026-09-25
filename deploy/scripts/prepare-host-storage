@@ -66,10 +66,10 @@ ensure_exact_dir() {
 [ ! -L "$APP_ROOT" ] || die "$APP_ROOT must not be a symlink"
 [ "$(realpath -e "$APP_ROOT")" = "$APP_ROOT" ] || die "$APP_ROOT resolves through a symlink"
 SRV_ROOT=${COMSES_SRV_ROOT:-/srv}
-for path in "$APP_ROOT" "$SRV_ROOT"; do
-    mount_target=$(findmnt -n -o TARGET -T "$path") || die "cannot identify the filesystem containing $path"
-    [ "$mount_target" != / ] || die "$path is on the root filesystem; mount Cinder-backed /srv storage first"
-done
+mount_target=$(findmnt -n -o TARGET --mountpoint "$SRV_ROOT") || die "$SRV_ROOT is not mounted; infrastructure must mount it before storage preparation"
+[ "$mount_target" = "$SRV_ROOT" ] || die "$SRV_ROOT is not an exact mountpoint"
+mount_target=$(findmnt -n -o TARGET -T "$APP_ROOT") || die "cannot identify the filesystem containing $APP_ROOT"
+[ "$mount_target" != / ] || die "$APP_ROOT is on the root filesystem; mount provisioned /srv storage first"
 if [ -e "$LOG_ROOT" ] || [ -e "$BACKUPS_ROOT" ]; then
     for path in "$LOG_ROOT" "$BACKUPS_ROOT"; do
         [ ! -e "$path" ] || [ ! -L "$path" ] || die "refusing to operate near infrastructure-owned symlink $path"

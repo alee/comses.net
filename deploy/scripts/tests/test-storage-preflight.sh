@@ -72,6 +72,8 @@ run_preflight() {
                 COMSES_EXPECTED_LOG_ROOT="$root/srv-logs" \
                 COMSES_EXPECTED_BACKUPS_ROOT="$root/srv-backups" \
                 COMSES_OPERATORS_GID="$OPERATORS_TEST_GID" \
+                COMSES_SRV_ROOT="$root" \
+                COMSES_TEST_MISSING_SRV_MOUNT="${COMSES_TEST_MISSING_SRV_MOUNT:-0}" \
                 DEPLOY_UID="$TEST_UID" \
                 DEPLOY_GID="$TEST_GID" \
                 "$STORAGE_PREFLIGHT"
@@ -89,6 +91,11 @@ assert_success "debian:operators 2775 logs and backups pass preflight" -- \
 
 assert_success "repeated preflight is idempotent" -- \
     run_preflight "$ROOT" "$BIN_DIR"
+
+COMSES_TEST_MISSING_SRV_MOUNT=1
+assert_failure "missing /srv mount blocks preflight" -- \
+    run_preflight "$ROOT" "$BIN_DIR"
+unset COMSES_TEST_MISSING_SRV_MOUNT
 
 # --- world-writable collaborative path fails closed ---
 sudo chmod 2777 "$ROOT/docker/shared/backups"
@@ -156,6 +163,7 @@ assert_success "legacy build/secrets with COMSES_STORAGE_AUTHORITY=new passes pr
             COMSES_EXPECTED_LOG_ROOT="$1/srv-logs" \
             COMSES_EXPECTED_BACKUPS_ROOT="$1/srv-backups" \
             COMSES_OPERATORS_GID="'"$OPERATORS_TEST_GID"'" \
+            COMSES_SRV_ROOT="$1" \
             DEPLOY_UID="'"$TEST_UID"'" \
             DEPLOY_GID="'"$TEST_GID"'" \
             "'"$STORAGE_PREFLIGHT"'"

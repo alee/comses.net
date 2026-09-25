@@ -66,6 +66,11 @@ fake_findmnt_bin() {
 #!/usr/bin/env bash
 set -euo pipefail
 path=\${*: -1}
+case " \$* " in
+    *" --mountpoint "*)
+        [ "\${COMSES_TEST_MISSING_SRV_MOUNT:-0}" != 1 ] || exit 1
+        ;;
+esac
 case "\$path" in
     ${fixture_root}*)
         echo "${fixture_root}"

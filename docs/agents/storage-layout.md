@@ -83,6 +83,25 @@ root. Neither variable is consumed directly by Compose; Compose binds
 infrastructure bind mount is in place and resolves to the same filesystem
 object as `docker/shared/backups`.
 
+### Volume identity ownership
+
+`comses/infrastructure` provisions the Cinder volumes and owns verification
+that the intended volumes are mounted. The application checks that `/srv` is
+an exact mountpoint before preparing storage or deploying, that application
+paths are not on `/`, and that the collaborative log and backup bind paths
+resolve to their canonical sources. These checks detect missing mounts and
+unsafe path layout; they do not claim to identify the underlying Cinder volume.
+
+### Accepted export access exception
+
+`curator_statistics` writes per-download rows to `/shared/statistics/downloads.csv`
+by default. Rows include IP addresses and a stable `user_id` for aggregation;
+they do not include usernames. The existing `0755` statistics directory and
+normal file creation mode are accepted for staging and production because these
+hosts have no local users beyond trusted operators. This is an explicit
+exception to private file modes for this operator export. Revisit the exception
+before giving other users or services access to the host or shared tree.
+
 ## Infrastructure preparation
 
 The checkout must already exist at the physical path `/srv/apps/comses`; it
@@ -96,7 +115,7 @@ rather than `/`, then run:
 ```bash
 cd /srv/apps/comses
 sudo deploy/scripts/prepare-host-storage
-deploy/scripts/storage-preflight
+make storage-preflight
 ```
 
 The preparation script is idempotent. It creates and repairs the exact

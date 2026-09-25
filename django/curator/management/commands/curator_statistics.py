@@ -117,7 +117,7 @@ class Command(BaseCommand):
                 writer.writerow(result)
 
     def export_all_downloads(self, downloads, dest):
-        downloads = downloads.select_related("release__codebase", "user").order_by(
+        downloads = downloads.select_related("release__codebase").order_by(
             "date_created"
         )
         with open(dest, "w", newline="") as f:
@@ -125,7 +125,7 @@ class Command(BaseCommand):
                 "date_created",
                 "url",
                 "ip_address",
-                "user",
+                "user_id",
                 "reason",
                 "affiliation",
                 "industry",
@@ -139,7 +139,7 @@ class Command(BaseCommand):
                         "date_created": download.date_created,
                         "url": download.release.get_absolute_url(),
                         "ip_address": download.ip_address,
-                        "user": (download.user.username if download.user_id else ""),
+                        "user_id": download.user_id or "",
                         "reason": download.reason,
                         "affiliation": download.affiliation,
                         "industry": download.industry,

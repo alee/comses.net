@@ -24,6 +24,7 @@ run_prepare() {
         COMSES_EXPECTED_LOG_ROOT="$root/srv-logs" \
         COMSES_EXPECTED_BACKUPS_ROOT="$root/srv-backups" \
         COMSES_SRV_ROOT="$root" \
+        COMSES_TEST_MISSING_SRV_MOUNT="${COMSES_TEST_MISSING_SRV_MOUNT:-0}" \
         "${@:3}" \
         "$PREPARE_HOST_STORAGE"
 }
@@ -47,6 +48,11 @@ BEFORE_BACKUPS_ROOT=$(owner_mode "$ROOT/srv-backups")
 
 assert_success "prepare-host-storage runs on a fresh fixture" -- \
     run_prepare "$ROOT" "$BIN_DIR"
+
+COMSES_TEST_MISSING_SRV_MOUNT=1
+assert_failure "missing /srv mount blocks preparation" -- \
+    run_prepare "$ROOT" "$BIN_DIR"
+unset COMSES_TEST_MISSING_SRV_MOUNT
 
 AFTER_LOG_ROOT=$(owner_mode "$ROOT/srv-logs")
 AFTER_BACKUPS_ROOT=$(owner_mode "$ROOT/srv-backups")

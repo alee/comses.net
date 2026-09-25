@@ -241,30 +241,32 @@ def get_latest_borg_backup_archive_name(ctx, repo):
 def _restore(ctx, repo, archive, working_directory, target_database):
     # Note that working directory is passed as argument. This makes it simpler to use either
     # a persistent directory (for testing and debugging) or a temporary directory
-    if archive is None:
-        archive = get_latest_borg_backup_archive_name(ctx, repo=repo)
+    with exclusive_backup_operation("restore"):
+        if archive is None:
+            archive = get_latest_borg_backup_archive_name(ctx, repo=repo)
 
-    check_archive(ctx, repo, archive)
-    with ctx.cd(working_directory):
-        _extract(ctx, repo=repo, archive=archive)
-        _restore_database(
-            ctx, working_directory=working_directory, target_database=target_database
-        )
-        ctx.run("/code/manage.py migrate")
-        _restore_files(working_directory)
+        check_archive(ctx, repo, archive)
+        with ctx.cd(working_directory):
+            _extract(ctx, repo=repo, archive=archive)
+            _restore_database(
+                ctx, working_directory=working_directory, target_database=target_database
+            )
+            ctx.run("/code/manage.py migrate")
+            _restore_files(working_directory)
 
 
 @task(aliases=["rf"])
 def restore_files(ctx, repo=settings.BORG_ROOT, archive=None):
     confirm("Are you sure you want to restore all file content (y/n)? ")
-    if archive is None:
-        archive = get_latest_borg_backup_archive_name(ctx, repo=repo)
+    with exclusive_backup_operation("restore"):
+        if archive is None:
+            archive = get_latest_borg_backup_archive_name(ctx, repo=repo)
 
-    check_archive(ctx, repo, archive)
-    with tempfile.TemporaryDirectory(dir=settings.SHARE_DIR) as working_directory:
-        with ctx.cd(working_directory):
-            _extract(ctx, repo, archive)
-            _restore_files(working_directory)
+        check_archive(ctx, repo, archive)
+        with tempfile.TemporaryDirectory(dir=settings.SHARE_DIR) as working_directory:
+            with ctx.cd(working_directory):
+                _extract(ctx, repo, archive)
+                _restore_files(working_directory)
 
 
 @task(aliases=["rdb"])
@@ -272,19 +274,20 @@ def restore_database(
     ctx, repo=settings.BORG_ROOT, archive=None, target_database=db._DEFAULT_DATABASE
 ):
     confirm("Are you sure you want to restore the database (y/n)? ")
-    if archive is None:
-        archive = get_latest_borg_backup_archive_name(ctx, repo=repo)
+    with exclusive_backup_operation("restore"):
+        if archive is None:
+            archive = get_latest_borg_backup_archive_name(ctx, repo=repo)
 
-    check_archive(ctx, repo, archive)
-    with tempfile.TemporaryDirectory(dir=settings.SHARE_DIR) as working_directory:
-        with ctx.cd(working_directory):
-            _extract(ctx, repo, archive, ["backups"])
-            _restore_database(
-                ctx,
-                working_directory=working_directory,
-                target_database=target_database,
-            )
-            ctx.run("/code/manage.py migrate")
+        check_archive(ctx, repo, archive)
+        with tempfile.TemporaryDirectory(dir=settings.SHARE_DIR) as working_directory:
+            with ctx.cd(working_directory):
+                _extract(ctx, repo, archive, ["backups"])
+                _restore_database(
+                    ctx,
+                    working_directory=working_directory,
+                    target_database=target_database,
+                )
+                ctx.run("/code/manage.py migrate")
 
 
 @task()
