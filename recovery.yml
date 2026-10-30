@@ -1,6 +1,6 @@
 services:
   server:
-    # Bypass the image's init process, including cron and the Huey consumer.
+    # Keep web, worker, and scheduler activation separate during recovery.
     # Restore commands later use `run --rm --no-deps --entrypoint ... server`.
     entrypoint: ["/bin/sleep"]
     command: ["infinity"]
@@ -12,6 +12,10 @@ services:
       DATACITE_DRY_RUN: "true"
       BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK: "yes"
       BORG_RELOCATED_REPO_ACCESS_IS_OK: "yes"
+  worker:
+    profiles: ["recovery-disabled"]
+  scheduler:
+    profiles: ["recovery-disabled"]
   db:
     restart: "no"
   redis:

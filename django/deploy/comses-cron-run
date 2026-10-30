@@ -1,0 +1,44 @@
+#!/usr/bin/python3
+import os
+import sys
+
+
+def main():
+    try:
+        log_fd = os.open("/proc/1/fd/1", os.O_WRONLY)
+    except OSError as error:
+        print(f"comses-cron-run: cannot open scheduler log: {error}", file=sys.stderr)
+        return 1
+    os.dup2(log_fd, sys.stdout.fileno())
+    os.dup2(log_fd, sys.stderr.fileno())
+    os.close(log_fd)
+
+    if len(sys.argv) < 2:
+        print("comses-cron-run: expected a command", file=sys.stderr)
+        return 2
+
+    try:
+        with open("/proc/1/environ", "rb") as stream:
+            process_environment = stream.read().split(b"\0")
+    except OSError as error:
+        print(f"comses-cron-run: cannot read scheduler environment: {error}", file=sys.stderr)
+        return 1
+
+    environment = {}
+    for item in process_environment:
+        key, separator, value = item.partition(b"=")
+        if separator:
+            environment[os.fsdecode(key)] = os.fsdecode(value)
+    environment.update(os.environ)
+
+    try:
+        os.chdir("/code")
+    except OSError as error:
+        print(f"comses-cron-run: cannot prepare job execution: {error}", file=sys.stderr)
+        return 1
+    os.execvpe(sys.argv[1], sys.argv[1:], environment)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -7,8 +7,8 @@ services:
       args:
         UBUNTU_MIRROR: "${UBUNTU_MIRROR}"
         REQUIREMENTS_FILE: "requirements-test.txt"
-        RUN_SCRIPT: "./deploy/test.sh"
     image: comses/server:dev
+    command: ["/code/deploy/test.sh"]
     volumes:
       - ./django:/code
       - ./docs:/docs
@@ -16,3 +16,9 @@ services:
       DJANGO_SETTINGS_MODULE: "core.settings.test"
     ports:
       - "127.0.0.1:8000:8000"
+  worker:
+    image: comses/server:dev
+    profiles: ["test-disabled"]
+  scheduler:
+    image: comses/server:dev
+    profiles: ["test-disabled"]

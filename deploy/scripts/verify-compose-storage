@@ -30,10 +30,20 @@ def expected_mounts(environment):
             f"{shared_root}/elasticsearch/v9/primary",
             False,
         ),
-        ("server", "/shared"): (shared_root, False),
-        ("server", "/shared/logs"): (log_root, False),
-        ("server", "/etc/environment"): (f"{app_root}/.env", True),
     }
+    app_services = (
+        ("server",)
+        if environment == "test"
+        else ("server", "worker", "scheduler")
+    )
+    for service_name in app_services:
+        mounts.update(
+            {
+                (service_name, "/shared"): (shared_root, False),
+                (service_name, "/shared/logs"): (log_root, False),
+                (service_name, "/etc/environment"): (f"{app_root}/.env", True),
+            }
+        )
     if environment in {"staging", "prod"}:
         mounts[("es02", "/usr/share/elasticsearch/data")] = (
             f"{shared_root}/elasticsearch/v9/secondary",

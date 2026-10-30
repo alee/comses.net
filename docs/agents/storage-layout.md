@@ -47,7 +47,7 @@ application, deployment, or operators group.
 | Class | Host path | Container path / consumer | Owner and mode | Authority |
 |---|---|---|---|---|
 | 1. Source-controlled, replaceable | `/srv/apps/comses` excluding `docker/`, `.env`, and generated `docker-compose.yml` | build contexts and read-only configuration binds | deployment user; normal checkout modes | Application (checkout) |
-| 2. Durable application state | `/srv/apps/comses/docker/shared/{library,media,repository,data,incoming,.latest}` | `/shared/*`; selected paths are read-only in nginx | `0:0`; directories `0755` | Application (exact) |
+| 2. Durable application state | `/srv/apps/comses/docker/shared/{library,media,repository,data,incoming,.latest}` | `/shared/*` in the web, worker, and scheduler containers; selected paths are read-only in nginx | `0:0`; directories `0755` | Application (exact) |
 | 2. PostgreSQL state | `/srv/apps/comses/docker/pgdata` | db `/var/lib/postgresql/data`; not mounted by server | `999:999`; `0700` | Application (exact) |
 | 6. Disposable cache or generated state | `/srv/apps/comses/docker/shared/{redis,elasticsearch,static,vite,statistics,tests,extract,uploads}` | Redis, Elasticsearch, collected assets, exports, tests, and temporary upload/restore data | Redis `999:1000` `0750`; Elasticsearch `1000:0` `0750`; remaining directories `0:0` `0755` | Application (exact) |
 | 2. ACME challenge state | `/srv/apps/comses/docker/shared/tls/well-known` | nginx `/srv/.well-known` | `0:0`; `0755` | Application (exact) |

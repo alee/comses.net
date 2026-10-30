@@ -22,7 +22,11 @@ def render(root, environment, runtime_directory):
         raise ValueError("Expected one normal uWSGI scheme parameter")
     override = {
         "services": {
-            "server": {"entrypoint": ["/etc/service/django/run"], "command": [], "restart": "no"},
+            "server": {
+                "entrypoint": [],
+                "command": ["/code/deploy/prod.sh"],
+                "restart": "no",
+            },
             "nginx": {
                 "volumes": [
                     {
@@ -48,7 +52,7 @@ def render(root, environment, runtime_directory):
         "sources": {
             str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in (source, params_source)
         },
-        "web_entrypoint": "/etc/service/django/run",
+        "web_command": "/code/deploy/prod.sh",
         "transport": "loopback-http-without-edge-proxy-protocol",
     }
     return {

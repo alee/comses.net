@@ -35,7 +35,7 @@ Supported values:
 - Staging and production use the canonical checkout `/srv/apps/comses`, durable
   shared state `/srv/apps/comses/docker/shared`, isolated PostgreSQL state
   `/srv/apps/comses/docker/pgdata`, logs `/srv/logs/comses`, and secrets
-  `/srv/apps/comses/docker/secrets`. The server container does not mount the
+  `/srv/apps/comses/docker/secrets`. Application containers do not mount the
   PostgreSQL data directory.
 - The complete writable-path classification, ownership contract, migration,
   rollback, and mount verification procedure is in
@@ -63,8 +63,33 @@ What `make deploy` does:
 1.  Builds and renders `docker-compose.yml` from selected environment files.
 2.  Builds images and ensures generated secrets/config files exist.
 3.  Pulls base services (and nginx for non-dev environments).
-4.  Starts services with Docker Compose.
-5.  Runs container preparation via `docker compose exec server inv prepare`.
+4. Starts the web server, Huey worker, and the single scheduler service with
+   Docker Compose.
+5. Runs container preparation via `docker compose exec server inv prepare`.
+
+## Application services and schedules
+
+The application image is based on `ubuntu:24.04` and runs each foreground
+process directly. Compose defines three application services using that same
+image:
+
+- `server` runs the environment-selected Django entry script.
+- `worker` runs the Huey consumer.
+- `scheduler` runs Ubuntu cron in the foreground. It is the only service that
+  owns application schedules; maintenance jobs run as root, as they did under
+  the previous image.
+
+The scheduler preserves the prior UTC times: Elasticsearch indexing at minute
+17 hourly; backup and DOI jobs at 06:25 daily; and vacuum, session cleanup, and
+ClamAV at 06:47 on Sundays. Cron job output is available with
+`docker compose logs scheduler`; the backup, vacuum, and ClamAV scripts retain
+their dedicated files under `/shared/logs`.
+
+During rollout, recreate the old `server` container before relying on the new
+`scheduler`: the old image also ran cron inside `server`. Check
+`docker compose ps` and scheduler logs to confirm the new scheduler is the sole
+owner. Recovery and E2E Compose overlays hold both `worker` and `scheduler`
+inactive unless explicitly enabled.
 
 ## Redis socket readiness and recovery
 
@@ -111,6 +136,7 @@ that the underlying cause is fixed. Production requires separate authorization.
 
 ```bash
 docker compose logs server
+docker compose logs worker scheduler
 docker compose exec server inv sh
 docker compose exec server ./manage.py <command>
 ```
@@ -126,7 +152,8 @@ sudo sync
 sudo systemctl poweroff
 ```
 
-`make stop` stops ingress before the application workers, persists Redis,
+`make stop` stops ingress, the scheduler, workers, and web service in order,
+persists Redis,
 allows extended graceful-stop timeouts, stops the remaining stateful services,
 and fails if any project service remains running or required `SIGKILL`. It does
 not regenerate Compose configuration or power off the host.

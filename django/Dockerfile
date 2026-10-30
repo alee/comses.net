@@ -1,7 +1,6 @@
 ARG REQUIREMENTS_FILE=requirements-dev.txt
-ARG RUN_SCRIPT=./deploy/dev.sh
 ARG UBUNTU_MIRROR=archive.ubuntu.com
-ARG BASE_IMAGE=phusion/baseimage:noble-1.0.2
+ARG BASE_IMAGE=ubuntu:24.04
 
 FROM ${BASE_IMAGE} AS base
 
@@ -10,16 +9,17 @@ ENV VIRTUAL_ENV=/home/comses/virtualenvs/comses.venv
 # FIXME: this gets overridden by values in .env
 ENV PATH=/usr/lib/postgresql/16/bin:${VIRTUAL_ENV}/bin:$PATH
 
-RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+RUN sed -i "s|archive.ubuntu.com|${UBUNTU_MIRROR}|g" /etc/apt/sources.list.d/ubuntu.sources && \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 
 FROM base AS builder
 
 RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    DEBIAN_FRONTEND=noninteractive \
-    sed -i "s|archive.ubuntu.com|${UBUNTU_MIRROR}|" /etc/apt/sources.list \
-        && apt-get -qq update \
-        && apt-get -qq install -y --no-install-recommends -o=Dpkg::Use-Pty=0 \
+    export DEBIAN_FRONTEND=noninteractive && \
+    apt-get -qq update && \
+    apt-get -qq install -y --no-install-recommends -o=Dpkg::Use-Pty=0 \
         build-essential \
         ca-certificates \
         git \
@@ -52,17 +52,18 @@ FROM base AS runtime
 
 RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    DEBIAN_FRONTEND=noninteractive \
-    sed -i "s|archive.ubuntu.com|${UBUNTU_MIRROR}|" /etc/apt/sources.list \
-        && apt-get -qq update \
-        && apt-get -qq install -y --no-install-recommends -o=Dpkg::Use-Pty=0 postgresql-common \
+    export DEBIAN_FRONTEND=noninteractive && \
+    apt-get -qq update && \
+    apt-get -qq install -y --no-install-recommends -o=Dpkg::Use-Pty=0 \
+        ca-certificates \
+        curl \
+        postgresql-common \
         && yes | /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh \
         && apt-get -qq update \
         && apt-get -qq install -y --no-install-recommends -o=Dpkg::Use-Pty=0 \
-        ca-certificates \
         clamav \
         clamav-daemon \
-        curl \
+        cron \
         git \
         libacl1 \
         libgeoip1 \
@@ -78,9 +79,6 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
         unzip \
         && update-alternatives --install /usr/bin/python python /usr/bin/python3 1000 \
         && useradd -m --uid 2718 comses \
-        && mkdir -p /etc/service/django /etc/service/huey \
-        && touch /etc/service/django/run /etc/service/huey/run \
-        && chmod a+x /etc/service/django/run /etc/service/huey/run \
         && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
@@ -89,12 +87,11 @@ RUN ln -s ${VIRTUAL_ENV}/bin/borg /usr/local/bin/borg && borg --version
 
 WORKDIR /code
 
-COPY ./deploy/cron.daily/* /etc/cron.daily/
-COPY ./deploy/cron.hourly/* /etc/cron.hourly/
-COPY ./deploy/cron.weekly/* /etc/cron.weekly/
-ARG RUN_SCRIPT
-COPY ${RUN_SCRIPT} /etc/service/django/run
-COPY ./deploy/huey.sh /etc/service/huey/run
 COPY . /code
+COPY ./deploy/comses.cron /etc/cron.d/comses
+COPY ./deploy/comses-cron-run /usr/local/bin/comses-cron-run
+RUN chmod 0644 /etc/cron.d/comses && \
+    chmod 0755 /usr/local/bin/comses-cron-run && \
+    chmod a+x /code/deploy/*.sh
 
-CMD ["/sbin/my_init"]
+CMD ["/code/deploy/dev.sh"]

@@ -1,0 +1,13 @@
+SHELL=/bin/sh
+PATH=/home/comses/virtualenvs/comses.venv/bin:/usr/lib/postgresql/16/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+VIRTUAL_ENV=/home/comses/virtualenvs/comses.venv
+CRON_TZ=UTC
+MAILTO=
+
+17 * * * * root /usr/local/bin/comses-cron-run /code/deploy/cron.hourly/update_elasticsearch_index
+25 6 * * * root /usr/local/bin/comses-cron-run /code/deploy/cron.daily/backup
+25 6 * * * root /usr/local/bin/comses-cron-run /code/deploy/cron.daily/doi_sync_all_metadata
+25 6 * * * root /usr/local/bin/comses-cron-run /code/deploy/cron.daily/doi_mint_pending_releases
+47 6 * * 0 root /usr/local/bin/comses-cron-run /code/deploy/cron.weekly/vacuum
+47 6 * * 0 root /usr/local/bin/comses-cron-run /code/deploy/cron.weekly/cleanup
+47 6 * * 0 root /usr/local/bin/comses-cron-run /code/deploy/cron.weekly/clamav

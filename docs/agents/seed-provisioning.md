@@ -335,9 +335,10 @@ and previous-file recovery directories. A host-level advisory lock serializes th
 workflow; the existing application backup lock still protects actual restoration.
 Other container users and operators must respect the exclusive window too.
 
-Every one-off container bypasses image init, disables stdin/TTY and uses the
-operator-only settings. Cron and the Huey consumer never start; Huey immediate
-execution remains false. Mail uses the in-memory backend, Sentry is disabled
+Every one-off container runs only its requested command, disables stdin/TTY,
+and uses the operator-only settings. The recovery profile keeps both the
+scheduler and Huey worker inactive; Huey immediate execution remains false.
+Mail uses the in-memory backend, Sentry is disabled
 before initialization, DataCite uses dry-run and integration credentials are
 disabled. Nginx is held behind a profile and loopback-only binding. These controls
 do not sandbox arbitrary application code or restrict host egress.
@@ -403,8 +404,8 @@ before deleting the ephemeral host or target.
 
 ## Operator-only web acceptance using the normal deployment stack
 
-Use nginx and the selected release's `/etc/service/django/run` uWSGI entrypoint
-for HTTP acceptance. `runserver` cannot implement the application's
+Use nginx and the selected release's direct uWSGI command
+(`/usr/local/bin/comses-app`) for HTTP acceptance. `runserver` cannot implement the application's
 `X-Accel-Redirect` download handoff and is not a download validation route.
 The normal `inv prepare` task must complete after restore before checking search.
 `make prepare` exposes that task separately. Web startup below uses existing

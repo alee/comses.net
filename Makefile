@@ -182,6 +182,8 @@ stop:
 ifneq ($(filter staging prod,$(DEPLOY_ENVIRONMENT)),)
 	$(COMPOSE) stop --timeout 120 nginx
 endif
+	$(COMPOSE) stop --timeout 180 scheduler
+	$(COMPOSE) stop --timeout 180 worker
 	$(COMPOSE) stop --timeout 180 server
 	@set -eu; \
 	if $(COMPOSE) ps --status running --services | grep -Fxq redis; then \
@@ -243,7 +245,9 @@ verify-compose-storage: docker-compose.yml
 
 .PHONY: verify-container-storage
 verify-container-storage: verify-compose-storage
-	$(COMPOSE) run --rm --no-deps --entrypoint sh server -c 'grep -F " /shared " /proc/mounts && grep -F " /shared/logs " /proc/mounts && test -d /shared/backups && test ! -e /shared/postgres'
+	@for service in server worker scheduler; do \
+		$(COMPOSE) run --rm --no-deps --entrypoint sh $$service -c 'grep -F " /shared " /proc/mounts && grep -F " /shared/logs " /proc/mounts && test -d /shared/backups && test ! -e /shared/postgres' || exit 1; \
+	done
 	$(COMPOSE) run --rm --no-deps --entrypoint sh db -c 'grep -F " /var/lib/postgresql/data " /proc/mounts'
 ifneq ($(filter staging prod,$(DEPLOY_ENVIRONMENT)),)
 	$(COMPOSE) run --rm --no-deps --entrypoint sh nginx -c 'grep -F " /var/log/nginx " /proc/mounts && grep -F " /srv/media " /proc/mounts'
@@ -262,8 +266,9 @@ restore: build $(BORG_REPO_PATH) | $(REPO_BACKUPS_PATH)
 		sudo mv $(REPO_BACKUPS_PATH)/repo $$preserved; \
 	fi
 	sudo tar -Jxf $(BORG_REPO_PATH) -C $(REPO_BACKUPS_PATH)
+	$(COMPOSE) up -d --wait --wait-timeout 120 --quiet-pull db
+	$(COMPOSE) run --rm --no-deps server inv borg.restore
 	$(COMPOSE) up -d --quiet-pull
-	$(COMPOSE) exec server inv borg.restore
 
 .PHONY: clean
 clean:

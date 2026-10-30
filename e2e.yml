@@ -37,9 +37,6 @@ services:
       - ./frontend:/code
       - /code/node_modules
   server:
-    build:
-      args:
-        RUN_SCRIPT: ./deploy/dev.sh
     depends_on:
       db:
         condition: service_started
@@ -60,3 +57,7 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       DJANGO_SETTINGS_MODULE: "core.settings.e2e"
+  worker:
+    profiles: ["e2e-disabled"]
+  scheduler:
+    profiles: ["e2e-disabled"]

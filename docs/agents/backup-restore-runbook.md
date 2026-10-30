@@ -38,8 +38,9 @@ Ubuntu's `borgbackup` package is not installed.
 The image supports create/check/extract and replication without FUSE; `borg mount`
 is not provided by this installation. Use extraction for restore drills.
 
-The server image installs `/code/deploy/cron.daily/backup`, which invokes
-`borg.backup-all` inside the container. The equivalent operator command is:
+The scheduler service runs `/code/deploy/cron.daily/backup`, which invokes
+`borg.backup-all` inside the container every day at 06:25 UTC. The equivalent
+operator command is:
 
 ```bash
 docker compose exec -T server inv borg.backup-all
@@ -70,13 +71,14 @@ maintenance-mode procedure below.
 
 ## Maintenance-mode backup
 
-Stop application writers while leaving PostgreSQL available, then run the
-backup in a one-off server container:
+Drain ingress first, then stop all application writers, including the
+scheduler, while leaving PostgreSQL available. Run the backup in a one-off
+server container:
 
 ```bash
-docker compose stop server
+docker compose stop scheduler worker server
 docker compose run --rm --no-deps server inv borg.backup-all
-docker compose up -d server
+docker compose up -d server worker scheduler
 ```
 
 If other services or operator jobs can write shared content, stop them as well.
@@ -84,8 +86,8 @@ Do not stop `db` until the dump has completed.
 
 ## Verify backup health
 
-Check the success marker, archive inventory, selected archive integrity, and
-cron log:
+Check the success marker, archive inventory, selected archive integrity, the
+backup log, and scheduler output:
 
 ```bash
 docker compose exec -T server cat /shared/backups/last-successful-backup
@@ -93,6 +95,7 @@ docker compose exec -T server inv borg.list
 docker compose exec -T server borg check --verify-data \
   /shared/backups/repo::"<archive-name>"
 docker compose exec -T server tail -n 100 /shared/logs/comses-backup.log
+docker compose logs --tail=100 scheduler
 ```
 
 Treat a missing or stale success marker as a failed backup. Also verify the
@@ -154,10 +157,10 @@ This replaces the target database, model library, media, and repository.
 Perform it during maintenance mode:
 
 ```bash
-docker compose stop server
+docker compose stop scheduler worker server
 docker compose run --rm --no-deps server inv borg.restore \
   --archive="<archive-name>" --force
-docker compose up -d server
+docker compose up -d server worker scheduler
 ```
 
 The restore holds the same `.backup.lock` as backup and prune while it
@@ -183,19 +186,19 @@ This replaces only the database and leaves shared files unchanged. Use it only
 when the selected dump is known to correspond to the retained files:
 
 ```bash
-docker compose stop server
+docker compose stop scheduler worker server
 docker compose run --rm --no-deps server inv borg.restore-database \
   --archive="<archive-name>"
-docker compose up -d server
+docker compose up -d server worker scheduler
 ```
 
 For a standalone dump already present in the server container:
 
 ```bash
-docker compose stop server
+docker compose stop scheduler worker server
 docker compose run --rm --no-deps server inv db.restore-from-dump \
   --dumpfile="/shared/backups/latest/<database>.dump" --force
-docker compose up -d server
+docker compose up -d server worker scheduler
 ```
 
 ## Local restore from a packaged repository
@@ -208,9 +211,10 @@ make restore
 ```
 
 It preserves an existing local Borg repository under a timestamped name,
-extracts the package into `docker/shared/backups`, starts the stack, and invokes
-the full restore. Treat this command as destructive to current local database
-and shared-file state.
+extracts the package into `docker/shared/backups`, starts the database, and runs
+the full restore in a one-off container before starting the application
+services. Treat this command as destructive to current local database and
+shared-file state.
 
 ## Post-restore validation
 
@@ -229,7 +233,7 @@ stored files correspond to the selected restore point.
 
 ## Explicit retention maintenance
 
-The server image does not schedule pruning or compaction. Daily backup creation
+The scheduler does not schedule pruning or compaction. Daily backup creation
 and verification remain automatic. Infrastructure owns the coordinated maintenance
 procedure, off-host verification, snapshots, retention records, and scheduling.
 For staging, follow the [infrastructure maintenance runbook](https://github.com/comses/infrastructure/blob/main/docs/comses-borg-maintenance.md)
@@ -307,12 +311,13 @@ separately as routine maintenance.
 
 ### Deployment transition
 
-Removing the source cron script does not change an existing container. Rebuild
-and recreate the server through the normal deployment procedure, then verify
-`/etc/cron.monthly/prune-backups` is absent. If replacing the container must wait,
-disable that installed cron entry explicitly before beginning maintenance. Check
-that no prune or compaction is already running; removing the schedule does not
-stop an existing process.
+The previous server container ran cron internally. Rebuild and recreate it
+through the normal deployment procedure so that the new `scheduler` service is
+the only application scheduler. Verify that only one scheduler is running and
+that `/etc/cron.monthly/prune-backups` is absent. If replacement must wait,
+disable the old scheduler explicitly before maintenance. Check that no prune or
+compaction is already running; changing the schedule does not stop an existing
+process.
 
 ## Restore drills
 

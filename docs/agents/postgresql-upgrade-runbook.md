@@ -21,7 +21,7 @@ A direct move is appropriate only when all of these are true:
 Inspect both locations before changing anything:
 
 ```bash
-docker compose stop server db
+docker compose stop scheduler worker server db
 sudo find docker/pgdata docker/shared/postgres -mindepth 1 -maxdepth 1 -print
 sudo cat docker/shared/postgres/PG_VERSION
 sudo stat -c '%d %n' docker/shared/postgres docker
@@ -39,7 +39,7 @@ sudo rmdir docker/pgdata
 sudo mv docker/shared/postgres docker/pgdata
 sudo chown 999:999 docker/pgdata
 sudo chmod 0700 docker/pgdata
-docker compose up -d db server
+docker compose up -d db server worker scheduler
 docker compose exec db pg_isready -U "${DB_USER}" -d "${DB_NAME}"
 docker compose exec server ./manage.py check
 ```
@@ -89,7 +89,7 @@ docker compose exec server pg_restore --list \
 Stop writers before moving the source data directory:
 
 ```bash
-docker compose stop server db
+docker compose stop scheduler worker server db
 export PGDATA_ROOT=/srv/apps/comses/docker/pgdata
 export PGDATA_BACKUP_ROOT=/srv/apps/comses/docker/shared/backups/postgres-clusters
 sudo install -d -o 999 -g 999 -m 0700 \
@@ -122,16 +122,15 @@ make docker-compose.yml
 docker compose build server
 docker compose up -d db
 docker compose exec db pg_isready -U "${DB_USER}" -d "${DB_NAME}"
-docker compose up -d server
 ```
 
 ### 4. Restore and migrate
 
 ```bash
-docker compose exec server inv db.restore-from-dump \
+docker compose run --rm --no-deps server inv db.restore-from-dump \
   --dumpfile="/shared/backups/db-migration-artifacts/${DB_MIGRATION_TIMESTAMP}/${DB_NAME}.dump" \
   --force --no-migrate
-docker compose exec server ./manage.py migrate --noinput
+docker compose run --rm --no-deps server ./manage.py migrate --noinput
 ```
 
 ### 5. Validate
@@ -139,10 +138,11 @@ docker compose exec server ./manage.py migrate --noinput
 ```bash
 docker compose exec db psql -U "${DB_USER}" -d "${DB_NAME}" -c 'SELECT version();'
 docker compose exec db psql -U "${DB_USER}" -d "${DB_NAME}" -c 'SELECT PostGIS_Full_Version();'
-docker compose exec server ./manage.py check
-docker compose exec server ./manage.py migrate --plan
-docker compose exec server pg_restore --list \
+docker compose run --rm --no-deps server ./manage.py check
+docker compose run --rm --no-deps server ./manage.py migrate --plan
+docker compose run --rm --no-deps server pg_restore --list \
   "/shared/backups/db-migration-artifacts/${DB_MIGRATION_TIMESTAMP}/${DB_NAME}.dump" >/dev/null
+docker compose up -d server worker scheduler
 ```
 
 Run the repository test and application smoke-test procedures before accepting
@@ -155,13 +155,13 @@ preserve the failed target separately, restore the original image and mount
 configuration, and move the untouched source cluster back:
 
 ```bash
-docker compose stop server db
+docker compose stop scheduler worker server db
 sudo mv "${PGDATA_ROOT}" \
   "${PGDATA_BACKUP_ROOT}/${DB_MIGRATION_TIMESTAMP}/failed-target"
 sudo mv "${PGDATA_BACKUP_ROOT}/${DB_MIGRATION_TIMESTAMP}/postgres" \
   "${PGDATA_ROOT}"
 make docker-compose.yml
-docker compose up -d db server
+docker compose up -d db server worker scheduler
 ```
 
 Verify the original database and application before removing any migration

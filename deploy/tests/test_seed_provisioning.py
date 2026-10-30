@@ -168,10 +168,10 @@ class SeedProvisioningTests(unittest.TestCase):
         base = self.root / "base.json"
         services = {
             name: {"image": "example.invalid/fixture", "restart": "always"}
-            for name in ("server", "vite", "nginx", *workflow.DATA_SERVICES)
+            for name in ("server", "worker", "scheduler", "vite", "nginx", *workflow.DATA_SERVICES)
         }
         services["nginx"]["ports"] = ["80:80"]
-        services["server"]["command"] = ["/sbin/my_init"]
+        services["server"]["command"] = ["/code/deploy/dev.sh"]
         base.write_text(json.dumps({"services": services}))
         result = subprocess.run(
             [
@@ -196,6 +196,8 @@ class SeedProvisioningTests(unittest.TestCase):
         merged = json.loads(result.stdout)["services"]
         self.assertEqual(merged["server"]["entrypoint"], ["/bin/sleep"])
         self.assertEqual(merged["server"]["command"], ["infinity"])
+        self.assertIn("recovery-disabled", merged["worker"]["profiles"])
+        self.assertIn("recovery-disabled", merged["scheduler"]["profiles"])
         self.assertEqual(merged["server"]["environment"]["DJANGO_SETTINGS_MODULE"], "core.settings.recovery")
         self.assertEqual(len(merged["nginx"]["ports"]), 1)
         self.assertEqual(merged["nginx"]["ports"][0]["host_ip"], "127.0.0.1")
@@ -207,8 +209,8 @@ class SeedProvisioningTests(unittest.TestCase):
         command = result.args[:]
         command[command.index("--profile") : command.index("--profile")] = ["-f", str(overlay)]
         web = json.loads(subprocess.check_output(command, text=True))["services"]
-        self.assertEqual(web["server"]["entrypoint"], ["/etc/service/django/run"])
-        self.assertFalse(web["server"].get("command"))
+        self.assertEqual(web["server"]["entrypoint"], [])
+        self.assertEqual(web["server"]["command"], ["/code/deploy/prod.sh"])
         self.assertEqual(web["server"]["environment"]["DJANGO_SETTINGS_MODULE"], "core.settings.recovery")
         self.assertEqual(web["nginx"]["ports"], merged["nginx"]["ports"])
         self.assertEqual(web["server"]["restart"], "no")
@@ -234,8 +236,8 @@ class SeedProvisioningTests(unittest.TestCase):
                 self.assertIn("uwsgi_pass", nginx)
                 self.assertNotIn("UWSGI_SCHEME       https;", files["uwsgi_params"])
                 override = json.loads(files["compose.json"])
-                self.assertEqual(override["services"]["server"]["entrypoint"], ["/etc/service/django/run"])
-                self.assertEqual(override["services"]["server"]["command"], [])
+                self.assertEqual(override["services"]["server"]["entrypoint"], [])
+                self.assertEqual(override["services"]["server"]["command"], ["/code/deploy/prod.sh"])
                 self.assertNotIn("ports", override["services"]["nginx"])
 
     def test_web_renderer_resumes_and_refuses_changed_output_before_writing(self):

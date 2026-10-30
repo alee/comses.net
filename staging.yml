@@ -122,8 +122,8 @@ services:
       args:
         REQUIREMENTS_FILE: requirements-dev.txt
         UBUNTU_MIRROR: "mirror.it.ubc.ca"
-        RUN_SCRIPT: "./deploy/prod.sh"
     image: comses/server:${RELEASE_VERSION}
+    command: ["/code/deploy/prod.sh"]
     restart: always
     volumes:
       - sockets:/shared/sockets
@@ -131,6 +131,26 @@ services:
       DJANGO_SETTINGS_MODULE: "core.settings.staging"
     ports:
       - "127.0.0.1:9191:9191" # uWSGI stats server
+    depends_on:
+      vite:
+        condition: service_completed_successfully
+      elasticsearch:
+        condition: service_healthy
+  worker:
+    image: comses/server:${RELEASE_VERSION}
+    restart: always
+    environment:
+      DJANGO_SETTINGS_MODULE: "core.settings.staging"
+    depends_on:
+      vite:
+        condition: service_completed_successfully
+      elasticsearch:
+        condition: service_healthy
+  scheduler:
+    image: comses/server:${RELEASE_VERSION}
+    restart: always
+    environment:
+      DJANGO_SETTINGS_MODULE: "core.settings.staging"
     depends_on:
       vite:
         condition: service_completed_successfully

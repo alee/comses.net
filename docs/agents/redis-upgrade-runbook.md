@@ -21,9 +21,10 @@ make docker-compose.yml
 docker compose pull redis
 ```
 
-Drain ingress and stop the server so web requests and Huey cannot write while
-Redis is persisted. The repository's `make stop` performs the ordered shutdown,
-including `SAVE` and graceful termination. Confirm it succeeds before continuing:
+Drain ingress and stop all application services so web requests, Huey, and
+scheduled jobs cannot write while Redis is persisted. The repository's
+`make stop` performs the ordered shutdown, including `SAVE` and graceful
+termination. Confirm it succeeds before continuing:
 
 ```sh
 make stop
@@ -55,8 +56,8 @@ part of the version upgrade.
 
 ## Rollback
 
-Stop ingress and application workers, then gracefully stop Redis 8. Retain its
-data directory for diagnosis. Restore the complete stopped Redis 7 directory copy
+Stop ingress and all application services, then gracefully stop Redis 8. Retain
+its data directory for diagnosis. Restore the complete stopped Redis 7 directory copy
 with its original ownership and permissions, and use a Compose override selecting
 the recorded Redis 7 image ID. Start Redis alone and verify persistence and socket
 access before reopening application traffic.

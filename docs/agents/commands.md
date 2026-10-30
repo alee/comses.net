@@ -26,7 +26,7 @@ docker compose exec server inv sh # django shell
 docker compose exec server inv db.sh # postgres shell
 docker compose exec server ./manage.py # django management commands, migrations, etc.
 docker compose exec server inv db.make-migrations # explicitly generate migration files
-docker compose logs [server|vite|...] # service logs
+docker compose logs [server|worker|scheduler|vite|...] # service logs
 docker compose exec vite npm run tls # vue tests, lint, prettier
 ```
 

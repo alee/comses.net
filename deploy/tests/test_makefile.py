@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -217,6 +218,8 @@ class MakefileContractTests(unittest.TestCase):
                     if deployment in ("staging", "prod"):
                         expected.append(["stop", "--timeout", "120", "nginx"])
                     expected += [
+                        ["stop", "--timeout", "180", "scheduler"],
+                        ["stop", "--timeout", "180", "worker"],
                         ["stop", "--timeout", "180", "server"],
                         ["ps", "--status", "running", "--services"],
                         [
@@ -339,6 +342,180 @@ class MakefileContractTests(unittest.TestCase):
         expected = application_root / "docker/secrets/download_analytics_hmac_key"
         self.assertIn(str(expected), result.stdout)
         self.assertNotIn(str(application_root / "build/secrets"), result.stdout)
+
+
+class ComposeRuntimeContractTests(unittest.TestCase):
+    def setUp(self):
+        if not shutil.which("docker"):
+            self.skipTest("Docker Compose CLI unavailable")
+        if subprocess.run(["docker", "compose", "version"], capture_output=True).returncode:
+            self.skipTest("Docker Compose CLI unavailable")
+
+        self.temporary_directory = tempfile.TemporaryDirectory(
+            prefix="comses-compose-runtime-"
+        )
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.root = Path(self.temporary_directory.name)
+        for name in (
+            "base.yml",
+            "dev.yml",
+            "test.yml",
+            "staging.yml",
+            "prod.yml",
+            "e2e.yml",
+            "recovery.yml",
+        ):
+            shutil.copy(ROOT / name, self.root / name)
+        (self.root / ".env").write_text(
+            "DB_USER=comsesnet\nDB_NAME=comsesnet\nES_VERSION=9.5.5\n"
+            "RELEASE_VERSION=fixture\n",
+            encoding="utf-8",
+        )
+        self.environment = os.environ.copy()
+        self.environment.update(
+            {
+                "COMSES_APP_ROOT": str(self.root),
+                "COMSES_SHARED_ROOT": str(self.root / "shared"),
+                "COMSES_POSTGRES_ROOT": str(self.root / "pgdata"),
+                "COMSES_LOG_ROOT": str(self.root / "logs"),
+                "COMSES_SECRETS_ROOT": str(self.root / "secrets"),
+                "DB_USER": "comsesnet",
+                "DB_NAME": "comsesnet",
+                "ES_VERSION": "9.5.5",
+                "RELEASE_VERSION": "fixture",
+                "UBUNTU_MIRROR": "archive.ubuntu.com",
+            }
+        )
+
+    def render(self, overlays, profile=None):
+        command = [
+            "docker",
+            "compose",
+            "--project-directory",
+            str(self.root),
+            "-f",
+            str(self.root / "base.yml"),
+        ]
+        command.extend(
+            argument
+            for overlay in overlays
+            for argument in ("-f", str(self.root / overlay))
+        )
+        if profile:
+            command.extend(("--profile", profile))
+        command.extend(("config", "--format", "json"))
+        result = subprocess.run(
+            command,
+            cwd=self.root,
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        (self.root / "docker-compose.yml").write_text(
+            result.stdout, encoding="utf-8"
+        )
+        return json.loads(result.stdout)["services"]
+
+    def assert_application_services(self, services):
+        server = services["server"]
+        worker = services["worker"]
+        scheduler = services["scheduler"]
+        for service in (worker, scheduler):
+            self.assertEqual(service["image"], server["image"])
+            self.assertNotIn("build", service)
+            self.assertEqual(service.get("ports"), None)
+            self.assertEqual(service["secrets"], server["secrets"])
+            self.assertEqual(
+                service["environment"]["DB_USER"],
+                server["environment"]["DB_USER"],
+            )
+            self.assertEqual(
+                service["environment"]["DB_NAME"],
+                server["environment"]["DB_NAME"],
+            )
+            targets = {mount["target"] for mount in service["volumes"]}
+            self.assertTrue({"/shared", "/shared/logs", "/etc/environment"} <= targets)
+        self.assertEqual(worker["command"], ["/code/deploy/huey.sh"])
+        self.assertEqual(scheduler["command"], ["cron", "-f", "-L", "15"])
+
+    def test_all_deployments_share_one_image_with_separate_processes(self):
+        cases = (
+            (("dev.yml",), None),
+            (("test.yml",), "test-disabled"),
+            (("staging.yml",), None),
+            (("staging.yml", "prod.yml"), None),
+        )
+        for overlays, profile in cases:
+            with self.subTest(overlays=overlays, profile=profile):
+                services = self.render(overlays, profile=profile)
+                self.assert_application_services(services)
+
+    def test_dev_worker_waits_for_django_initialization(self):
+        services = self.render(("dev.yml",))
+        self.assertEqual(
+            services["worker"]["depends_on"]["server"]["condition"],
+            "service_healthy",
+        )
+        self.assertIn("healthcheck", services["server"])
+
+    def test_storage_verifier_covers_shared_app_mounts(self):
+        cases = (
+            ("dev", ("dev.yml",)),
+            ("test", ("test.yml",)),
+            ("staging", ("staging.yml",)),
+            ("prod", ("staging.yml", "prod.yml")),
+        )
+        for environment, overlays in cases:
+            with self.subTest(environment=environment):
+                self.render(overlays)
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(ROOT / "deploy/scripts/verify-compose-storage"),
+                    ],
+                    cwd=self.root,
+                    env=self.environment | {"DEPLOY_ENVIRONMENT": environment},
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    result.returncode,
+                    0,
+                    msg=result.stdout + result.stderr,
+                )
+
+    def test_e2e_and_recovery_hold_worker_and_scheduler(self):
+        test = self.render(("test.yml",))
+        self.assertNotIn("worker", test)
+        self.assertNotIn("scheduler", test)
+
+        e2e = self.render(("dev.yml", "e2e.yml"))
+        self.assertNotIn("worker", e2e)
+        self.assertNotIn("scheduler", e2e)
+        e2e = self.render(("dev.yml", "e2e.yml"), profile="e2e-disabled")
+        self.assertEqual(e2e["worker"]["profiles"], ["e2e-disabled"])
+        self.assertEqual(e2e["scheduler"]["profiles"], ["e2e-disabled"])
+
+        recovery_overlays = ("staging.yml", "prod.yml", "recovery.yml")
+        recovery = self.render(recovery_overlays, profile="recovery-disabled")
+        self.assertEqual(recovery["server"]["entrypoint"], ["/bin/sleep"])
+        self.assertEqual(recovery["server"]["command"], ["infinity"])
+        self.assertEqual(recovery["worker"]["profiles"], ["recovery-disabled"])
+        self.assertEqual(recovery["scheduler"]["profiles"], ["recovery-disabled"])
+
+    def test_cron_schedule_keeps_utc_cadences(self):
+        schedule = (ROOT / "django/deploy/comses.cron").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("CRON_TZ=UTC", schedule)
+        for cadence in (
+            "17 * * * * root",
+            "25 6 * * * root",
+            "47 6 * * 0 root",
+        ):
+            self.assertIn(cadence, schedule)
+        self.assertNotIn("prune", schedule)
 
 
 if __name__ == "__main__":
