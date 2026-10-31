@@ -10,6 +10,7 @@ x-app-dependencies: &app-dependencies
 
 x-app-service: &app-service
   image: comses/server
+  init: true
   secrets:
     - datacite_api_password
     - db_password
@@ -172,7 +173,7 @@ services:
         condition: service_started
   scheduler:
     <<: *app-service
-    command: ["cron", "-f", "-L", "15"]
+    command: ["/usr/local/bin/comses-scheduler"]
     depends_on:
       <<: *app-dependencies
       server:

@@ -1,0 +1,55 @@
+#!/usr/bin/python3
+"""Run cron in the foreground and let running jobs finish when asked to stop.
+
+Cron ignores SIGTERM as PID 1 and, if killed, leaves its jobs to be reaped with the
+container. On SIGTERM, stop cron from starting new jobs, then wait for every
+remaining process to exit; the container stop timeout bounds the wait.
+"""
+
+import os
+import signal
+import subprocess
+import sys
+import time
+
+
+def running_job_pids(ignored):
+    pids = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) in ignored:
+            continue
+        try:
+            with open(f"/proc/{entry}/stat") as stream:
+                state = stream.read().rsplit(")", 1)[1].split()[0]
+        except (OSError, IndexError):
+            continue
+        if state != "Z":
+            pids.append(int(entry))
+    return pids
+
+
+def main():
+    cron = subprocess.Popen(["cron", "-f", "-L", "15"])
+    stopping = []
+
+    def stop(signum, frame):
+        stopping.append(signum)
+        if cron.poll() is None:
+            cron.terminate()
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+
+    while cron.poll() is None:
+        time.sleep(1)
+    if not stopping:
+        return cron.returncode or 1
+
+    ignored = {1, os.getpid(), cron.pid}
+    while running_job_pids(ignored):
+        time.sleep(1)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

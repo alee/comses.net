@@ -423,6 +423,7 @@ class ComposeRuntimeContractTests(unittest.TestCase):
         scheduler = services["scheduler"]
         for service in (worker, scheduler):
             self.assertEqual(service["image"], server["image"])
+            self.assertIs(service["init"], True)
             self.assertNotIn("build", service)
             self.assertEqual(service.get("ports"), None)
             self.assertEqual(service["secrets"], server["secrets"])
@@ -437,7 +438,7 @@ class ComposeRuntimeContractTests(unittest.TestCase):
             targets = {mount["target"] for mount in service["volumes"]}
             self.assertTrue({"/shared", "/shared/logs", "/etc/environment"} <= targets)
         self.assertEqual(worker["command"], ["/code/deploy/huey.sh"])
-        self.assertEqual(scheduler["command"], ["cron", "-f", "-L", "15"])
+        self.assertEqual(scheduler["command"], ["/usr/local/bin/comses-scheduler"])
 
     def test_all_deployments_share_one_image_with_separate_processes(self):
         cases = (

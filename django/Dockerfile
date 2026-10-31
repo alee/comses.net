@@ -90,8 +90,9 @@ WORKDIR /code
 COPY . /code
 COPY ./deploy/comses.cron /etc/cron.d/comses
 COPY ./deploy/comses-cron-run /usr/local/bin/comses-cron-run
+COPY ./deploy/comses-scheduler /usr/local/bin/comses-scheduler
 RUN chmod 0644 /etc/cron.d/comses && \
-    chmod 0755 /usr/local/bin/comses-cron-run && \
+    chmod 0755 /usr/local/bin/comses-cron-run /usr/local/bin/comses-scheduler && \
     chmod a+x /code/deploy/*.sh
 
 CMD ["/code/deploy/dev.sh"]
